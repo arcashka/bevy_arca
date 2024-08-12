@@ -1,10 +1,12 @@
 use crate::gpu::Gpu;
 use bevy::{
     prelude::*,
+    utils::HashMap,
     window::{RawHandleWrapperHolder, WindowMode},
 };
 use raw_window_handle::RawWindowHandle;
 use smallvec::SmallVec;
+use std::hash::{Hash, Hasher};
 use windows::{
     core::Interface,
     Win32::{
@@ -21,54 +23,74 @@ use windows::{
 
 pub const FRAME_COUNT: usize = 2;
 
+#[derive(Resource, Deref)]
+pub struct RenderTargetHeap(pub ID3D12DescriptorHeap);
+
+#[derive(Deref, DerefMut, PartialEq, Eq, Default, Copy, Clone)]
+pub struct HashableDescriptorHandle(pub D3D12_CPU_DESCRIPTOR_HANDLE);
+
+impl Hash for HashableDescriptorHandle {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ptr.hash(state);
+    }
+}
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct RenderTargetStorage(pub HashMap<HashableDescriptorHandle, ID3D12Resource>);
+
 #[derive(Component)]
 pub struct WindowRenderTarget {
     pub swapchain: IDXGISwapChain4,
-    pub rtv_heap: ID3D12DescriptorHeap,
-    // remove Option here??
-    pub rtvs: Option<[ID3D12Resource; FRAME_COUNT]>,
-    pub rtv_handles: Option<[D3D12_CPU_DESCRIPTOR_HANDLE; FRAME_COUNT]>,
-    pub frame_index: u32,
+    pub rtv_handles: [HashableDescriptorHandle; FRAME_COUNT],
+    frame_index: u32,
+    pub viewport: D3D12_VIEWPORT,
 }
 
 pub fn create_render_targets(
     mut windows: Query<(Entity, &Window, &RawHandleWrapperHolder), Without<WindowRenderTarget>>,
     mut commands: Commands,
     gpu: Res<Gpu>,
+    render_target_heap: Res<RenderTargetHeap>,
+    mut render_target_storage: ResMut<RenderTargetStorage>,
 ) {
     for (entity, window, window_handle) in &mut windows {
-        if !matches!(
-            window.mode,
-            WindowMode::Windowed | WindowMode::BorderlessFullscreen(_)
-        ) {
-            panic!(
-                "WindowMode must be Windowed or BorderlessFullscreen, was {:?}",
-                window.mode
-            );
-        }
+        let swapchain_desc = create_swapchain_desc(window);
+        let swapchain = create_swapchain(swapchain_desc, get_hwnd(window_handle), &gpu);
+        let frame_index = unsafe { swapchain.GetCurrentBackBufferIndex() };
+        let viewport = create_viewport(window);
+        let rtv_handles = create_rtvs(
+            &gpu.device,
+            &swapchain,
+            &render_target_heap,
+            &mut render_target_storage,
+        );
 
-        let swapchain_desc = swapchain_desc(window);
-        commands.entity(entity).insert(create_window_render_target(
-            &gpu,
-            &swapchain_desc,
-            window_handle,
-        ));
+        commands.entity(entity).insert(WindowRenderTarget {
+            swapchain,
+            rtv_handles,
+            frame_index,
+            viewport,
+        });
     }
 }
 
 pub fn resize_swapchains_if_needed(
     mut windows: Query<(&Window, &mut WindowRenderTarget)>,
     gpu: Res<Gpu>,
+    render_target_heap: Res<RenderTargetHeap>,
+    mut render_target_storage: ResMut<RenderTargetStorage>,
 ) {
     for (window, mut render_target) in &mut windows {
-        let new_swapchain_desc = swapchain_desc(window);
+        let new_swapchain_desc = create_swapchain_desc(window);
         let old_swapchain_desc = unsafe { render_target.swapchain.GetDesc1() }.unwrap();
         if new_swapchain_desc == old_swapchain_desc {
             continue;
         }
 
-        render_target.rtvs = None;
-        render_target.rtv_handles = None;
+        for handle in render_target.rtv_handles {
+            render_target_storage.remove(&handle);
+        }
+        render_target.rtv_handles = [HashableDescriptorHandle::default(); FRAME_COUNT];
 
         unsafe {
             render_target.swapchain.ResizeBuffers(
@@ -81,18 +103,17 @@ pub fn resize_swapchains_if_needed(
         }
         .expect("ResizeBuffers failed");
 
-        let (rtvs, rtv_handles) = create_rtvs(
+        render_target.rtv_handles = create_rtvs(
             &gpu.device,
             &render_target.swapchain,
-            &render_target.rtv_heap,
+            &render_target_heap,
+            &mut render_target_storage,
         );
-        render_target.rtvs = Some(rtvs);
-        render_target.rtv_handles = Some(rtv_handles);
         render_target.frame_index = unsafe { render_target.swapchain.GetCurrentBackBufferIndex() };
     }
 }
 
-fn swapchain_desc(window: &Window) -> DXGI_SWAP_CHAIN_DESC1 {
+fn create_swapchain_desc(window: &Window) -> DXGI_SWAP_CHAIN_DESC1 {
     DXGI_SWAP_CHAIN_DESC1 {
         Width: window.physical_width(),
         Height: window.physical_height(),
@@ -110,57 +131,25 @@ fn swapchain_desc(window: &Window) -> DXGI_SWAP_CHAIN_DESC1 {
     }
 }
 
-fn create_window_render_target(
-    gpu: &Gpu,
-    swapchain_desc: &DXGI_SWAP_CHAIN_DESC1,
-    window_handle: &RawHandleWrapperHolder,
-) -> WindowRenderTarget {
-    let swapchain = unsafe {
+fn create_swapchain(desc: DXGI_SWAP_CHAIN_DESC1, hwnd: HWND, gpu: &Gpu) -> IDXGISwapChain4 {
+    unsafe {
         gpu.factory.CreateSwapChainForHwnd(
-            &gpu.queue,
-            get_hwnd(window_handle),
-            swapchain_desc,
-            None,
+            &gpu.queue, hwnd, &desc, None, // ??
             None,
         )
     }
-    .unwrap()
+    .expect("failed to create swapchain")
     .cast::<IDXGISwapChain4>()
-    .unwrap();
-
-    unsafe { swapchain.SetMaximumFrameLatency(1).unwrap() };
-    let rtv_heap = unsafe {
-        gpu.device
-            .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                NumDescriptors: FRAME_COUNT as u32,
-                ..Default::default()
-            })
-    }
-    .unwrap();
-    let (rtvs, rtv_handles) = create_rtvs(&gpu.device, &swapchain, &rtv_heap);
-
-    let frame_index = unsafe { swapchain.GetCurrentBackBufferIndex() };
-
-    WindowRenderTarget {
-        swapchain,
-        rtv_heap,
-        rtvs: Some(rtvs),
-        rtv_handles: Some(rtv_handles),
-        frame_index,
-    }
+    .expect("failed to cast swapchain to IDXGISwapChain4")
 }
 
 fn create_rtvs(
     device: &ID3D12Device9,
     swapchain: &IDXGISwapChain4,
-    rtv_heap: &ID3D12DescriptorHeap,
-) -> (
-    [ID3D12Resource; FRAME_COUNT],
-    [D3D12_CPU_DESCRIPTOR_HANDLE; FRAME_COUNT],
-) {
-    let mut rtvs = SmallVec::with_capacity(FRAME_COUNT);
-    let mut handles = [D3D12_CPU_DESCRIPTOR_HANDLE::default(); FRAME_COUNT];
+    rtv_heap: &RenderTargetHeap,
+    render_targets: &mut RenderTargetStorage,
+) -> [HashableDescriptorHandle; FRAME_COUNT] {
+    let mut handles = [HashableDescriptorHandle::default(); FRAME_COUNT];
 
     let heap_increment =
         unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) } as usize;
@@ -169,14 +158,15 @@ fn create_rtvs(
     (0..FRAME_COUNT).for_each(|i| {
         let rtv = unsafe { swapchain.GetBuffer::<ID3D12Resource>(i as u32) }.unwrap();
         unsafe { device.CreateRenderTargetView(&rtv, None, handle) };
+        let hashable_handle = HashableDescriptorHandle(handle);
 
-        rtvs.push(rtv);
-        handles[i] = handle;
+        render_targets.insert(hashable_handle, rtv);
+        handles[i] = hashable_handle;
 
         handle.ptr += heap_increment;
     });
 
-    (rtvs.into_inner().unwrap(), handles)
+    handles
 }
 
 fn get_hwnd(window_handle: &RawHandleWrapperHolder) -> HWND {
@@ -192,5 +182,16 @@ fn get_hwnd(window_handle: &RawHandleWrapperHolder) -> HWND {
             HWND(window_handle.hwnd.get() as *mut core::ffi::c_void)
         }
         _ => unreachable!(),
+    }
+}
+
+fn create_viewport(window: &Window) -> D3D12_VIEWPORT {
+    D3D12_VIEWPORT {
+        TopLeftX: 0.0,
+        TopLeftY: 0.0,
+        Width: window.physical_width() as f32,
+        Height: window.physical_height() as f32,
+        MinDepth: D3D12_MIN_DEPTH,
+        MaxDepth: D3D12_MAX_DEPTH,
     }
 }
