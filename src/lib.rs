@@ -37,7 +37,7 @@ impl Plugin for RtxPlugin {
                     create_fence,
                     create_vertex_buffers, // TODO: separate
                     render,
-                    // resize_swapchains_if_needed,
+                    resize_swapchains_if_needed,
                 )
                     .chain(),
             );

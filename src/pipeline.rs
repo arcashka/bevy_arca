@@ -24,7 +24,7 @@ use windows::{
 
 use crate::{
     gpu::Gpu,
-    swapchain::WindowRenderTarget,
+    swapchain::{RenderTargetStorage, WindowRenderTarget},
     triangle::{Triangle, TriangleVertexBuffer, TriangleVertexBuffers},
 };
 
@@ -43,7 +43,6 @@ pub struct Pipeline {
     state: Option<ID3D12PipelineState>,
     command_list: Option<ID3D12GraphicsCommandList>,
     fence: Option<Fence>,
-    viewport: Option<D3D12_VIEWPORT>,
 }
 
 unsafe impl Send for Pipeline {}
@@ -107,11 +106,7 @@ pub fn create_root_signature(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     });
 }
 
-pub fn create_pipeline_state(
-    gpu: Res<Gpu>,
-    mut pipelines: ResMut<Pipelines>,
-    windows: Query<&Window>,
-) {
+pub fn create_pipeline_state(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     let pipeline_entry = pipelines.storage.entry(THE_ONLY_PIPELINE).or_default();
     if pipeline_entry.state.is_some() {
         return;
@@ -274,16 +269,6 @@ pub fn create_pipeline_state(
             .CreateGraphicsPipelineState(&pipeline_state_desc)
             .unwrap()
     });
-
-    let window = windows.get_single().unwrap();
-    pipeline_entry.viewport = Some(D3D12_VIEWPORT {
-        TopLeftX: 0.0,
-        TopLeftY: 0.0,
-        Width: window.physical_width() as f32,
-        Height: window.physical_height() as f32,
-        MinDepth: D3D12_MIN_DEPTH,
-        MaxDepth: D3D12_MAX_DEPTH,
-    });
 }
 
 pub fn create_command_list(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
@@ -334,13 +319,21 @@ pub fn render(
     vertex_buffers: Res<TriangleVertexBuffers>,
     gpu: Res<Gpu>,
     mut pipelines: ResMut<Pipelines>,
+    mut render_target_storage: ResMut<RenderTargetStorage>,
 ) {
     let pipeline = pipelines.storage.get_mut(&THE_ONLY_PIPELINE).unwrap();
     for (mut target, window) in windows.iter_mut() {
         for triangle in triangles.iter() {
             let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
-            populate_command_list(&gpu, pipeline, window, &target, vertex_buffer)
-                .expect("Failed to populate command list");
+            populate_command_list(
+                &gpu,
+                pipeline,
+                window,
+                &target,
+                vertex_buffer,
+                &mut render_target_storage,
+            )
+            .expect("Failed to populate command list");
             let command_list = Some(pipeline.command_list.as_ref().unwrap().cast().unwrap());
             unsafe { gpu.queue.ExecuteCommandLists(&[command_list]) };
         }
@@ -357,6 +350,7 @@ fn populate_command_list(
     window: &Window,
     render_target: &WindowRenderTarget,
     vertex_buffer: &TriangleVertexBuffer,
+    render_target_storage: &mut RenderTargetStorage,
 ) -> Result<()> {
     // Command list allocators can only be reset when the associated
     // command lists have finished execution on the GPU; apps should use
@@ -368,7 +362,7 @@ fn populate_command_list(
     let command_list = pipeline.command_list.as_ref().unwrap();
     let pipeline_state_object = pipeline.state.as_ref().unwrap();
     let root_signature = pipeline.root_signature.as_ref().unwrap();
-    let viewport = pipeline.viewport.unwrap();
+    let viewport = render_target.viewport;
 
     // However, when ExecuteCommandList() is called on a particular
     // command list, that command list can then be reset at any time and
@@ -390,6 +384,7 @@ fn populate_command_list(
         command_list.RSSetScissorRects(&[scissor_rect]);
     }
 
+    let buffer = render_target_storage.get_mut()
     // Indicate that the back buffer will be used as a render target.
     let barrier = transition_barrier(
         &render_target.rtvs.as_ref().unwrap()[render_target.frame_index as usize],
