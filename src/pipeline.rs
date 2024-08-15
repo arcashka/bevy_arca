@@ -24,29 +24,19 @@ use windows::{
 
 use crate::{
     gpu::Gpu,
-    swapchain::{RenderTargetStorage, WindowRenderTarget},
+    swapchain::WindowRenderTarget,
     triangle::{Triangle, TriangleVertexBuffer, TriangleVertexBuffers},
 };
 
 type PipelineId = usize;
 const THE_ONLY_PIPELINE: PipelineId = 0;
 
-struct Fence {
-    fence: ID3D12Fence,
-    fence_value: u64,
-    fence_event: HANDLE,
-}
-
 #[derive(Default)]
 pub struct Pipeline {
     root_signature: Option<ID3D12RootSignature>,
     state: Option<ID3D12PipelineState>,
     command_list: Option<ID3D12GraphicsCommandList>,
-    fence: Option<Fence>,
 }
-
-unsafe impl Send for Pipeline {}
-unsafe impl Sync for Pipeline {}
 
 #[derive(Resource)]
 pub struct Pipelines {
@@ -293,25 +283,6 @@ pub fn create_command_list(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     pipeline_entry.command_list = Some(command_list);
 }
 
-pub fn create_fence(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
-    let pipeline_entry = pipelines.storage.entry(THE_ONLY_PIPELINE).or_default();
-    if pipeline_entry.fence.is_some() {
-        return;
-    }
-
-    let fence = unsafe { gpu.device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
-        .expect("failed to create fence");
-    let fence_value = 0;
-    let fence_event =
-        unsafe { CreateEventA(None, false, false, None).expect("Failed to create event") };
-
-    pipeline_entry.fence = Some(Fence {
-        fence,
-        fence_value,
-        fence_event,
-    });
-}
-
 // redo this shit
 pub fn render(
     mut windows: Query<(&mut WindowRenderTarget, &Window)>,
@@ -319,28 +290,20 @@ pub fn render(
     vertex_buffers: Res<TriangleVertexBuffers>,
     gpu: Res<Gpu>,
     mut pipelines: ResMut<Pipelines>,
-    mut render_target_storage: ResMut<RenderTargetStorage>,
 ) {
     let pipeline = pipelines.storage.get_mut(&THE_ONLY_PIPELINE).unwrap();
     for (mut target, window) in windows.iter_mut() {
         for triangle in triangles.iter() {
             let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
-            populate_command_list(
-                &gpu,
-                pipeline,
-                window,
-                &target,
-                vertex_buffer,
-                &mut render_target_storage,
-            )
-            .expect("Failed to populate command list");
+            populate_command_list(&gpu, pipeline, window, &target, vertex_buffer)
+                .expect("Failed to populate command list");
             let command_list = Some(pipeline.command_list.as_ref().unwrap().cast().unwrap());
             unsafe { gpu.queue.ExecuteCommandLists(&[command_list]) };
         }
         unsafe { target.swapchain.Present(1, DXGI_PRESENT(0)) }
             .ok()
             .unwrap();
-        wait_for_previous_frame(pipeline.fence.as_mut().unwrap(), &gpu, &mut target);
+        target.signal_end_present(&gpu.queue);
     }
 }
 
@@ -350,7 +313,6 @@ fn populate_command_list(
     window: &Window,
     render_target: &WindowRenderTarget,
     vertex_buffer: &TriangleVertexBuffer,
-    render_target_storage: &mut RenderTargetStorage,
 ) -> Result<()> {
     // Command list allocators can only be reset when the associated
     // command lists have finished execution on the GPU; apps should use
@@ -382,25 +344,18 @@ fn populate_command_list(
         command_list.SetGraphicsRootSignature(root_signature);
         command_list.RSSetViewports(&[viewport]);
         command_list.RSSetScissorRects(&[scissor_rect]);
-    }
+    };
 
-    let buffer = render_target_storage.get_mut()
+    let back_buffer = render_target.back_buffer();
     // Indicate that the back buffer will be used as a render target.
     let barrier = transition_barrier(
-        &render_target.rtvs.as_ref().unwrap()[render_target.frame_index as usize],
+        back_buffer,
         D3D12_RESOURCE_STATE_PRESENT,
         D3D12_RESOURCE_STATE_RENDER_TARGET,
     );
     unsafe { command_list.ResourceBarrier(&[barrier]) };
 
-    let rtv_descriptor_size = unsafe {
-        gpu.device
-            .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
-    } as usize;
-    let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-        ptr: unsafe { render_target.rtv_heap.GetCPUDescriptorHandleForHeapStart() }.ptr
-            + render_target.frame_index as usize * rtv_descriptor_size,
-    };
+    let rtv_handle = render_target.back_buffer_handle();
 
     unsafe { command_list.OMSetRenderTargets(1, Some(&rtv_handle), false, None) };
 
@@ -413,7 +368,7 @@ fn populate_command_list(
 
         // Indicate that the back buffer will now be used to present.
         command_list.ResourceBarrier(&[transition_barrier(
-            &render_target.rtvs.as_ref().unwrap()[render_target.frame_index as usize],
+            back_buffer,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PRESENT,
         )]);
@@ -439,28 +394,4 @@ fn transition_barrier(
             }),
         },
     }
-}
-
-fn wait_for_previous_frame(fence: &mut Fence, gpu: &Gpu, render_target: &mut WindowRenderTarget) {
-    let saved_fence_value = fence.fence_value;
-    unsafe { gpu.queue.Signal(&fence.fence, saved_fence_value) }
-        .ok()
-        .unwrap();
-
-    fence.fence_value += 1;
-
-    // Wait until the previous frame is finished.
-    if unsafe { fence.fence.GetCompletedValue() } < saved_fence_value {
-        unsafe {
-            fence
-                .fence
-                .SetEventOnCompletion(saved_fence_value, fence.fence_event)
-        }
-        .ok()
-        .unwrap();
-
-        unsafe { WaitForSingleObject(fence.fence_event, INFINITE) };
-    }
-
-    render_target.frame_index = unsafe { render_target.swapchain.GetCurrentBackBufferIndex() };
 }
