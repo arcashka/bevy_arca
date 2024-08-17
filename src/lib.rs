@@ -1,14 +1,14 @@
 mod gpu;
 mod pipeline;
-mod swapchain;
+mod render_target;
 mod triangle;
 
-use crate::{gpu::Gpu, swapchain::create_render_targets};
+use crate::gpu::Gpu;
 use bevy::{app::MainScheduleOrder, ecs::schedule::ScheduleLabel, prelude::*};
 use pipeline::{
     create_command_list, create_pipeline_state, create_root_signature, render, Pipelines,
 };
-use swapchain::{resize_swapchains_if_needed, switch_swapchain_buffers, RenderTargetHeap};
+use render_target::{create_render_targets, resize_swapchains_if_needed, RenderTargetHeap};
 use triangle::{create_vertex_buffers, Triangle, TriangleVertexBuffers};
 
 pub struct GraphicsPlugin;
@@ -38,7 +38,6 @@ impl Plugin for GraphicsPlugin {
                     create_vertex_buffers, // TODO: separate
                     render,
                     resize_swapchains_if_needed,
-                    switch_swapchain_buffers,
                 )
                     .chain(),
             );

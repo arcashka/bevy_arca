@@ -50,7 +50,7 @@ pub struct WindowRenderTarget {
     pub swapchain: IDXGISwapChain4,
     rtvs: SmallVec<[ID3D12Resource; FRAME_COUNT]>,
     rtv_handles: SmallVec<[D3D12_CPU_DESCRIPTOR_HANDLE; FRAME_COUNT]>,
-    frame_index: u32,
+    swapchain_buffer_index: u32,
     fence: Fence,
     pub viewport: D3D12_VIEWPORT,
 }
@@ -77,21 +77,12 @@ pub fn resize_swapchains_if_needed(
     render_target_heap: Res<RenderTargetHeap>,
 ) {
     for (window, mut render_target) in &mut windows {
+        render_target.wait_frame_finished();
         let new_swapchain_desc = create_swapchain_desc(window);
         let old_swapchain_desc = unsafe { render_target.swapchain.GetDesc1() }.unwrap();
         if new_swapchain_desc != old_swapchain_desc {
-            render_target.handle_resize(
-                &gpu.device,
-                &render_target_heap,
-                create_swapchain_desc(window),
-            );
+            render_target.handle_resize(&gpu.device, &render_target_heap, new_swapchain_desc);
         }
-    }
-}
-
-pub fn switch_swapchain_buffers(mut render_targets: Query<&mut WindowRenderTarget>) {
-    for mut render_target in render_targets.iter_mut() {
-        render_target.wait_for_fence();
         render_target.update_frame_index();
     }
 }
@@ -125,7 +116,7 @@ impl WindowRenderTarget {
             swapchain,
             rtvs: SmallVec::new(),
             rtv_handles: SmallVec::new(),
-            frame_index,
+            swapchain_buffer_index: frame_index,
             fence,
             viewport,
         };
@@ -135,11 +126,11 @@ impl WindowRenderTarget {
     }
 
     pub fn back_buffer(&self) -> &ID3D12Resource {
-        &self.rtvs[self.frame_index as usize]
+        &self.rtvs[self.swapchain_buffer_index as usize]
     }
 
     pub fn back_buffer_handle(&self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        self.rtv_handles[self.frame_index as usize]
+        self.rtv_handles[self.swapchain_buffer_index as usize]
     }
 
     // TODO: can i not have queue here?
@@ -153,10 +144,10 @@ impl WindowRenderTarget {
     }
 
     fn update_frame_index(&mut self) {
-        self.frame_index = unsafe { self.swapchain.GetCurrentBackBufferIndex() };
+        self.swapchain_buffer_index = unsafe { self.swapchain.GetCurrentBackBufferIndex() };
     }
 
-    fn wait_for_fence(&mut self) {
+    fn wait_frame_finished(&mut self) {
         let previous_fence_value = self.fence.fence_value - 1;
         if unsafe { self.fence.fence.GetCompletedValue() } < previous_fence_value {
             unsafe {
@@ -199,8 +190,6 @@ impl WindowRenderTarget {
         rtv_heap: &RenderTargetHeap,
         desc: DXGI_SWAP_CHAIN_DESC1,
     ) {
-        info!("Handling resize: {:?}", desc);
-
         self.destroy_resources();
 
         unsafe {

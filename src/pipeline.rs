@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use windows::{
     core::*,
     Win32::{
-        Foundation::{HANDLE, RECT},
+        Foundation::RECT,
         Graphics::{
             Direct3D::{
                 Fxc::{D3DCompile, D3DCOMPILE_DEBUG, D3DCOMPILE_SKIP_OPTIMIZATION},
@@ -18,13 +18,12 @@ use windows::{
                 DXGI_PRESENT,
             },
         },
-        System::Threading::{CreateEventA, WaitForSingleObject, INFINITE},
     },
 };
 
 use crate::{
     gpu::Gpu,
-    swapchain::WindowRenderTarget,
+    render_target::WindowRenderTarget,
     triangle::{Triangle, TriangleVertexBuffer, TriangleVertexBuffers},
 };
 
