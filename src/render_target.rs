@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 use windows::{
     core::Interface,
     Win32::{
-        Foundation::{HANDLE, HWND},
+        Foundation::{HANDLE, HWND, RECT},
         Graphics::{
             Direct3D12::*,
             Dxgi::{
@@ -53,6 +53,7 @@ pub struct WindowRenderTarget {
     swapchain_buffer_index: u32,
     fence: Fence,
     pub viewport: D3D12_VIEWPORT,
+    pub rect: RECT,
 }
 
 pub fn create_render_targets(
@@ -110,6 +111,7 @@ impl WindowRenderTarget {
 
         let frame_index = unsafe { swapchain.GetCurrentBackBufferIndex() };
         let viewport = create_viewport(window);
+        let rect = create_rect(window);
         let fence = create_fence(gpu);
 
         let mut window_render_target = WindowRenderTarget {
@@ -119,6 +121,7 @@ impl WindowRenderTarget {
             swapchain_buffer_index: frame_index,
             fence,
             viewport,
+            rect,
         };
 
         window_render_target.create_rtvs(&gpu.device, rtv_heap);
@@ -254,6 +257,15 @@ fn create_viewport(window: &Window) -> D3D12_VIEWPORT {
         Height: window.physical_height() as f32,
         MinDepth: D3D12_MIN_DEPTH,
         MaxDepth: D3D12_MAX_DEPTH,
+    }
+}
+
+fn create_rect(window: &Window) -> RECT {
+    RECT {
+        left: 0,
+        top: 0,
+        right: window.physical_width() as i32,
+        bottom: window.physical_height() as i32,
     }
 }
 

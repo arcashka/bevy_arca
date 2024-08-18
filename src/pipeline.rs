@@ -3,38 +3,25 @@ use std::{collections::HashMap, ffi::c_void};
 use bevy::prelude::*;
 use windows::{
     core::*,
-    Win32::{
-        Foundation::RECT,
-        Graphics::{
-            Direct3D::{
-                Fxc::{D3DCompile, D3DCOMPILE_DEBUG, D3DCOMPILE_SKIP_OPTIMIZATION},
-                ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-            },
-            Direct3D12::*,
-            Dxgi::{
-                Common::{
-                    DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
-                },
-                DXGI_PRESENT,
-            },
+    Win32::Graphics::{
+        Direct3D::{
+            Fxc::{D3DCompile, D3DCOMPILE_DEBUG, D3DCOMPILE_SKIP_OPTIMIZATION},
+            ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
         },
+        Direct3D12::*,
+        Dxgi::Common::{DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
     },
 };
 
-use crate::{
-    gpu::Gpu,
-    render_target::WindowRenderTarget,
-    triangle::{Triangle, TriangleVertexBuffer, TriangleVertexBuffers},
-};
+use crate::{gpu::Gpu, triangle::TriangleVertexBuffer};
 
-type PipelineId = usize;
-const THE_ONLY_PIPELINE: PipelineId = 0;
+pub type PipelineId = usize;
+pub const THE_ONLY_PIPELINE: PipelineId = 0;
 
 #[derive(Default)]
 pub struct Pipeline {
     root_signature: Option<ID3D12RootSignature>,
-    state: Option<ID3D12PipelineState>,
-    command_list: Option<ID3D12GraphicsCommandList>,
+    pub state: Option<ID3D12PipelineState>,
 }
 
 #[derive(Resource)]
@@ -260,137 +247,21 @@ pub fn create_pipeline_state(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     });
 }
 
-pub fn create_command_list(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
-    let pipeline_entry = pipelines.storage.entry(THE_ONLY_PIPELINE).or_default();
-    if pipeline_entry.command_list.is_some() {
-        return;
-    }
+impl Pipeline {
+    pub fn populate_command_list(
+        &self,
+        command_list: &mut ID3D12GraphicsCommandList,
+        vertex_buffer: &TriangleVertexBuffer,
+    ) {
+        let pipeline_state_object = self.state.as_ref().unwrap();
+        let root_signature = self.root_signature.as_ref().unwrap();
 
-    let command_list: ID3D12GraphicsCommandList = unsafe {
-        gpu.device.CreateCommandList(
-            0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            &gpu.command_allocator,
-            pipeline_entry.state.as_ref().expect("State Object is None"),
-        )
-    }
-    .expect("CreateCommandList failed");
-    unsafe {
-        command_list.Close().expect("Failed to close command list");
-    };
-
-    pipeline_entry.command_list = Some(command_list);
-}
-
-// redo this shit
-pub fn render(
-    mut windows: Query<(&mut WindowRenderTarget, &Window)>,
-    triangles: Query<Entity, With<Triangle>>,
-    vertex_buffers: Res<TriangleVertexBuffers>,
-    gpu: Res<Gpu>,
-    mut pipelines: ResMut<Pipelines>,
-) {
-    let pipeline = pipelines.storage.get_mut(&THE_ONLY_PIPELINE).unwrap();
-    for (mut target, window) in windows.iter_mut() {
-        for triangle in triangles.iter() {
-            let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
-            populate_command_list(&gpu, pipeline, window, &target, vertex_buffer)
-                .expect("Failed to populate command list");
-            let command_list = Some(pipeline.command_list.as_ref().unwrap().cast().unwrap());
-            unsafe { gpu.queue.ExecuteCommandLists(&[command_list]) };
+        unsafe {
+            command_list.SetPipelineState(pipeline_state_object);
+            command_list.SetGraphicsRootSignature(root_signature);
+            command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            command_list.IASetVertexBuffers(0, Some(&[vertex_buffer.view]));
+            command_list.DrawInstanced(3, 1, 0, 0);
         }
-        unsafe { target.swapchain.Present(1, DXGI_PRESENT(0)) }
-            .ok()
-            .unwrap();
-        target.signal_end_present(&gpu.queue);
-    }
-}
-
-fn populate_command_list(
-    gpu: &Gpu,
-    pipeline: &Pipeline,
-    window: &Window,
-    render_target: &WindowRenderTarget,
-    vertex_buffer: &TriangleVertexBuffer,
-) -> Result<()> {
-    // Command list allocators can only be reset when the associated
-    // command lists have finished execution on the GPU; apps should use
-    // fences to determine GPU execution progress.
-    unsafe {
-        gpu.command_allocator.Reset()?;
-    }
-
-    let command_list = pipeline.command_list.as_ref().unwrap();
-    let pipeline_state_object = pipeline.state.as_ref().unwrap();
-    let root_signature = pipeline.root_signature.as_ref().unwrap();
-    let viewport = render_target.viewport;
-
-    // However, when ExecuteCommandList() is called on a particular
-    // command list, that command list can then be reset at any time and
-    // must be before re-recording.
-    unsafe {
-        command_list.Reset(&gpu.command_allocator, pipeline_state_object)?;
-    }
-
-    let scissor_rect = RECT {
-        left: 0,
-        top: 0,
-        right: window.width() as i32,
-        bottom: window.height() as i32,
-    };
-    // Set necessary state.
-    unsafe {
-        command_list.SetGraphicsRootSignature(root_signature);
-        command_list.RSSetViewports(&[viewport]);
-        command_list.RSSetScissorRects(&[scissor_rect]);
-    };
-
-    let back_buffer = render_target.back_buffer();
-    // Indicate that the back buffer will be used as a render target.
-    let barrier = transition_barrier(
-        back_buffer,
-        D3D12_RESOURCE_STATE_PRESENT,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-    );
-    unsafe { command_list.ResourceBarrier(&[barrier]) };
-
-    let rtv_handle = render_target.back_buffer_handle();
-
-    unsafe { command_list.OMSetRenderTargets(1, Some(&rtv_handle), false, None) };
-
-    // Record commands.
-    unsafe {
-        command_list.ClearRenderTargetView(rtv_handle, &[0.0_f32, 0.2_f32, 0.4_f32, 1.0_f32], None);
-        command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        command_list.IASetVertexBuffers(0, Some(&[vertex_buffer.view]));
-        command_list.DrawInstanced(3, 1, 0, 0);
-
-        // Indicate that the back buffer will now be used to present.
-        command_list.ResourceBarrier(&[transition_barrier(
-            back_buffer,
-            D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PRESENT,
-        )]);
-    }
-
-    unsafe { command_list.Close() }
-}
-
-fn transition_barrier(
-    resource: &ID3D12Resource,
-    state_before: D3D12_RESOURCE_STATES,
-    state_after: D3D12_RESOURCE_STATES,
-) -> D3D12_RESOURCE_BARRIER {
-    D3D12_RESOURCE_BARRIER {
-        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: std::mem::ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: unsafe { std::mem::transmute_copy(resource) },
-                StateBefore: state_before,
-                StateAfter: state_after,
-                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-            }),
-        },
     }
 }
