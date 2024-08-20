@@ -1,11 +1,21 @@
-use crate::gpu::Gpu;
-use bevy::{prelude::*, window::RawHandleWrapperHolder};
+use crate::{gpu::Gpu, handle::Handle};
+use bevy::{
+    ecs::{
+        component::Component,
+        entity::Entity,
+        query::Without,
+        system::{Commands, Query, Res, Resource},
+    },
+    prelude::Deref,
+    window::{RawHandleWrapperHolder, Window},
+};
+
 use raw_window_handle::RawWindowHandle;
 use smallvec::SmallVec;
 use windows::{
     core::Interface,
     Win32::{
-        Foundation::{HANDLE, HWND, RECT},
+        Foundation::{HWND, RECT},
         Graphics::{
             Direct3D12::*,
             Dxgi::{
@@ -39,11 +49,8 @@ impl RenderTargetHeap {
 struct Fence {
     fence: ID3D12Fence,
     fence_value: u64,
-    fence_event: HANDLE,
+    fence_event: Handle,
 }
-
-unsafe impl Send for Fence {}
-unsafe impl Sync for Fence {}
 
 #[derive(Component)]
 pub struct WindowRenderTarget {

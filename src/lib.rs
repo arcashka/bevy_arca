@@ -1,4 +1,5 @@
 mod gpu;
+mod handle;
 mod pipeline;
 mod render_target;
 mod renderer;
