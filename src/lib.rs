@@ -1,8 +1,11 @@
+mod gltf;
 mod gpu;
-mod handle;
+mod gpu_types;
+mod image;
 mod pipeline;
 mod render_target;
 mod renderer;
+mod scene;
 mod triangle;
 
 use crate::gpu::Gpu;
@@ -13,6 +16,12 @@ use renderer::{render, Renderer};
 use triangle::{create_vertex_buffers, Triangle, TriangleVertexBuffers};
 
 pub struct GraphicsPlugin;
+
+#[derive(Asset, Reflect)]
+pub struct Mesh;
+
+#[derive(Asset, Reflect)]
+pub struct Material;
 
 impl Plugin for GraphicsPlugin {
     fn build(&self, app: &mut App) {
