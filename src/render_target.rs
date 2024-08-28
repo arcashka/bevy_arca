@@ -1,4 +1,4 @@
-use crate::{gpu::Gpu, handle::Handle};
+use crate::{gpu::Gpu, win_types::WinHandle};
 use bevy::{
     ecs::{
         component::Component,
@@ -49,7 +49,7 @@ impl RenderTargetHeap {
 struct Fence {
     fence: ID3D12Fence,
     fence_value: u64,
-    fence_event: Handle,
+    fence_event: WinHandle,
 }
 
 #[derive(Component)]
@@ -163,12 +163,12 @@ impl WindowRenderTarget {
             unsafe {
                 self.fence
                     .fence
-                    .SetEventOnCompletion(previous_fence_value, self.fence.fence_event)
+                    .SetEventOnCompletion(previous_fence_value, self.fence.fence_event.0)
             }
             .ok()
             .unwrap();
 
-            unsafe { WaitForSingleObject(self.fence.fence_event, INFINITE) };
+            unsafe { WaitForSingleObject(self.fence.fence_event.0, INFINITE) };
         }
     }
 
@@ -286,6 +286,6 @@ fn create_fence(gpu: &Gpu) -> Fence {
     Fence {
         fence,
         fence_value,
-        fence_event,
+        fence_event: WinHandle(fence_event),
     }
 }

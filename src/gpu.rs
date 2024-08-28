@@ -1,4 +1,4 @@
-use bevy::prelude::{error, info, warn, Resource};
+use bevy::prelude::*;
 use core::ffi::c_void;
 use std::{backtrace::Backtrace, ptr};
 use windows::{
@@ -22,6 +22,7 @@ pub struct Gpu {
 }
 
 impl Gpu {
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(use_warp: bool) -> Result<Self, Error> {
         let mut factory_flags = DXGI_CREATE_FACTORY_FLAGS(0);
         if cfg!(debug_assertions) {
@@ -74,6 +75,7 @@ impl Gpu {
     }
 }
 
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "system" fn log_debug_layer_message(
     category: D3D12_MESSAGE_CATEGORY,
     severity: D3D12_MESSAGE_SEVERITY,
