@@ -13,7 +13,7 @@ use windows::{
     },
 };
 
-use crate::{gpu::Gpu, triangle::TriangleVertexBuffer};
+use crate::gpu::Gpu;
 
 pub type PipelineId = usize;
 pub const THE_ONLY_PIPELINE: PipelineId = 0;
@@ -34,6 +34,12 @@ impl Pipelines {
         Pipelines {
             storage: HashMap::new(),
         }
+    }
+}
+
+impl Default for Pipelines {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -251,7 +257,7 @@ impl Pipeline {
     pub fn populate_command_list(
         &self,
         command_list: &mut ID3D12GraphicsCommandList,
-        vertex_buffer: &TriangleVertexBuffer,
+        // vertex_buffer: &TriangleVertexBuffer,
     ) {
         let pipeline_state_object = self.state.as_ref().unwrap();
         let root_signature = self.root_signature.as_ref().unwrap();
@@ -260,7 +266,7 @@ impl Pipeline {
             command_list.SetPipelineState(pipeline_state_object);
             command_list.SetGraphicsRootSignature(root_signature);
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            command_list.IASetVertexBuffers(0, Some(&[vertex_buffer.view]));
+            // command_list.IASetVertexBuffers(0, Some(&[vertex_buffer.view]));
             command_list.DrawInstanced(3, 1, 0, 0);
         }
     }

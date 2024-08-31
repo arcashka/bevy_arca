@@ -1,3 +1,4 @@
+pub mod camera;
 pub mod gltf;
 pub mod gpu;
 pub mod image;
@@ -6,7 +7,6 @@ pub mod mesh;
 pub mod pipeline;
 pub mod render_target;
 pub mod renderer;
-pub mod triangle;
 pub mod win_types;
 
 use bevy::{app::MainScheduleOrder, ecs::schedule::ScheduleLabel, prelude::*};
@@ -19,7 +19,6 @@ use mesh::MeshPlugin;
 use pipeline::{create_pipeline_state, create_root_signature, Pipelines};
 use render_target::{create_render_targets, resize_swapchains_if_needed, RenderTargetHeap};
 use renderer::{render, Renderer};
-use triangle::{create_vertex_buffers, Triangle, TriangleVertexBuffers};
 
 pub struct ArcaPlugin;
 
@@ -44,17 +43,14 @@ impl Plugin for ArcaPlugin {
 
         app.insert_resource(gpu)
             .insert_resource(Pipelines::new())
-            .insert_resource(TriangleVertexBuffers::default())
             .insert_resource(render_target_heap)
             .insert_resource(renderer)
-            .add_systems(Startup, create_triangle)
             .add_systems(
                 Render,
                 (
                     create_render_targets,
                     create_root_signature,
                     create_pipeline_state,
-                    create_vertex_buffers, // TODO: separate
                     render,
                     resize_swapchains_if_needed,
                 )
@@ -65,7 +61,3 @@ impl Plugin for ArcaPlugin {
 
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 struct Render;
-
-fn create_triangle(mut commands: Commands) {
-    commands.spawn(Triangle);
-}

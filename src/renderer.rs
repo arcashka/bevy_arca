@@ -18,7 +18,6 @@ use crate::{
     gpu::Gpu,
     pipeline::{Pipelines, THE_ONLY_PIPELINE},
     render_target::WindowRenderTarget,
-    triangle::{Triangle, TriangleVertexBuffers},
 };
 
 #[derive(Resource)]
@@ -48,8 +47,7 @@ impl Renderer {
 pub fn render(
     pipelines: Res<Pipelines>,
     gpu: Res<Gpu>,
-    triangles: Query<Entity, With<Triangle>>,
-    vertex_buffers: Res<TriangleVertexBuffers>,
+    // vertex_buffers: Res<TriangleVertexBuffers>,
     mut render_targets: Query<&mut WindowRenderTarget>,
     mut renderer: ResMut<Renderer>,
 ) {
@@ -103,10 +101,10 @@ pub fn render(
             );
         }
 
-        for triangle in triangles.iter() {
-            let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
-            pipeline.populate_command_list(&mut renderer.command_list, vertex_buffer);
-        }
+        // for triangle in triangles.iter() {
+        // let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
+        pipeline.populate_command_list(&mut renderer.command_list /*, vertex_buffer */);
+        // }
 
         unsafe {
             renderer.command_list.ResourceBarrier(&[transition_barrier(
