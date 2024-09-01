@@ -1,6 +1,6 @@
 use bevy::{math::Affine2, prelude::*};
 
-use crate::image::Image;
+use super::Image;
 
 pub struct MaterialPlugin;
 

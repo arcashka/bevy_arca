@@ -2,7 +2,6 @@ mod sampler;
 
 use bevy::prelude::*;
 
-use bevy::asset::Handle;
 use image::DynamicImage;
 use sampler::Sampler;
 use windows::Win32::Graphics::{
@@ -15,24 +14,6 @@ use windows::Win32::Graphics::{
 };
 
 use crate::win_types::WinHandle;
-
-pub const TRANSPARENT_IMAGE_HANDLE: Handle<Image> =
-    Handle::weak_from_u128(154728948001857810431816125397303024160);
-
-pub struct ImagePlugin;
-
-impl Plugin for ImagePlugin {
-    fn build(&self, app: &mut App) {
-        app.register_type::<Image>()
-            .init_asset::<Image>()
-            .register_asset_reflect::<Image>();
-
-        let mut image_assets = app.world_mut().resource_mut::<Assets<Image>>();
-
-        image_assets.insert(&Handle::default(), Image::default());
-        image_assets.insert(&TRANSPARENT_IMAGE_HANDLE, Image::new());
-    }
-}
 
 #[derive(Asset, Reflect, Debug, Clone, Default)]
 #[reflect_value(Default)]

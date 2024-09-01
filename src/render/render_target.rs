@@ -1,4 +1,3 @@
-use crate::{gpu::Gpu, win_types::WinHandle};
 use bevy::{
     ecs::{
         component::Component,
@@ -26,6 +25,9 @@ use windows::{
         System::Threading::{CreateEventA, WaitForSingleObject, INFINITE},
     },
 };
+
+use super::gpu::Gpu;
+use crate::win_types::WinHandle;
 
 pub const FRAME_COUNT: usize = 2;
 

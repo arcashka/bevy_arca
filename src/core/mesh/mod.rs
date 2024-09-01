@@ -1,4 +1,4 @@
-use bevy::{asset::Asset, prelude::*, reflect::TypePath};
+use bevy::{asset::Asset, reflect::TypePath};
 use windows::Win32::Graphics::Direct3D12::D3D12_PRIMITIVE_TOPOLOGY_TYPE;
 
 #[derive(Asset, TypePath)]
@@ -7,14 +7,6 @@ pub struct Mesh {
     positions: Vec<[f32; 3]>,
     normals: Option<Vec<[f32; 3]>>,
     indices: Option<Vec<u32>>,
-}
-
-pub struct MeshPlugin;
-
-impl Plugin for MeshPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_asset::<Mesh>();
-    }
 }
 
 impl Mesh {

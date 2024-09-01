@@ -23,7 +23,10 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
 };
 
-use crate::{gltf::Gltf, image::Image, material::Material, mesh::Mesh};
+use crate::{
+    core::{Image, Material, Mesh},
+    gltf::Gltf,
+};
 
 use super::{tree_iterator::GltfTreeIterator, GltfAssetLabel, GltfMesh, GltfNode, GltfPrimitive};
 

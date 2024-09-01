@@ -13,7 +13,9 @@ use windows::{
     },
 };
 
-use crate::gpu::Gpu;
+use crate::core::Shader;
+
+use super::Gpu;
 
 pub type PipelineId = usize;
 pub const THE_ONLY_PIPELINE: PipelineId = 0;
@@ -28,6 +30,9 @@ pub struct Pipeline {
 pub struct Pipelines {
     pub storage: HashMap<PipelineId, Pipeline>,
 }
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct PathTracerShader(pub Handle<Shader>);
 
 impl Pipelines {
     pub fn new() -> Self {
@@ -88,30 +93,21 @@ pub fn create_root_signature(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     });
 }
 
-pub fn create_pipeline_state(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
+pub fn create_pipeline_state(
+    gpu: Res<Gpu>,
+    mut pipelines: ResMut<Pipelines>,
+    shader_handle: Res<PathTracerShader>,
+    shaders: Res<Assets<Shader>>,
+) {
     let pipeline_entry = pipelines.storage.entry(THE_ONLY_PIPELINE).or_default();
     if pipeline_entry.state.is_some() {
         return;
     }
-
-    let shader_code = s!(r#"
-    struct VS_OUTPUT {
-        float4 Pos : SV_POSITION;
-        float4 Color : COLOR0;
-    };
-
-    VS_OUTPUT VSMain(float4 inPos : POSITION, float4 inColor : COLOR) {
-        VS_OUTPUT output;
-        output.Pos = inPos;
-        output.Color = inColor;
-        return output;
+    let shader = shaders.get(&shader_handle.0);
+    if shader.is_none() {
+        return;
     }
-
-    float4 PSMain(VS_OUTPUT input) : SV_TARGET {
-        return input.Color;
-    }
-    "#);
-
+    let shader = shader.unwrap();
     let mut vertex_shader: Option<ID3DBlob> = None;
     let mut pixel_shader: Option<ID3DBlob> = None;
     let mut vertex_error_msg: Option<ID3DBlob> = None;
@@ -122,6 +118,7 @@ pub fn create_pipeline_state(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     } else {
         0
     };
+    let shader_code = shader.pcstr();
     unsafe {
         let result_vs = D3DCompile(
             shader_code.as_ptr() as *const c_void,

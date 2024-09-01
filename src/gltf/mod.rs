@@ -3,7 +3,7 @@ mod tree_iterator;
 
 use bevy::{asset::AssetPath, prelude::*};
 
-use crate::{material::Material, mesh::Mesh};
+use crate::core::{Material, Mesh};
 
 use self::loader::GltfLoader;
 
