@@ -6,7 +6,9 @@ mod render_target;
 use bevy::{app::MainScheduleOrder, ecs::schedule::ScheduleLabel, prelude::*};
 
 use drawer::draw;
-use pipeline::{create_pipeline_state, create_root_signature, PathTracerShader, Pipelines};
+use pipeline::{
+    create_pathtracer_pipeline, PathTracerShaderHandle, PipelineStorage, PATH_TRACER_PIPELINE_ID,
+};
 use render_target::{create_render_targets, resize_swapchains_if_needed};
 
 pub use drawer::Drawer;
@@ -30,17 +32,16 @@ impl Plugin for RenderPlugin {
         let shader_handle = asset_server.load("demo.hlsl");
 
         app.insert_resource(gpu)
-            .insert_resource(PathTracerShader(shader_handle))
+            .insert_resource(PathTracerShaderHandle(shader_handle))
             .insert_resource(render_target_heap)
             .insert_resource(drawer)
-            .insert_resource(Pipelines::default())
+            .insert_resource(PipelineStorage::new())
             .add_systems(
                 RenderSchedule,
                 (
                     create_render_targets,
-                    create_root_signature,
-                    create_pipeline_state,
-                    draw,
+                    create_pathtracer_pipeline,
+                    draw::<PATH_TRACER_PIPELINE_ID>,
                     resize_swapchains_if_needed,
                 )
                     .chain(),

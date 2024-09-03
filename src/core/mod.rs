@@ -2,6 +2,7 @@ mod image;
 mod material;
 mod mesh;
 mod shader;
+mod vertex_buffer;
 
 use bevy::prelude::*;
 
@@ -9,6 +10,8 @@ pub use image::Image;
 pub use material::Material;
 pub use mesh::Mesh;
 pub use shader::Shader;
+pub use vertex_buffer::VertexBuffer;
+
 use shader::ShaderLoader;
 
 pub struct CorePlugin;

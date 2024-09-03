@@ -14,11 +14,7 @@ use windows::{
     },
 };
 
-use super::{
-    gpu::Gpu,
-    pipeline::{Pipelines, THE_ONLY_PIPELINE},
-    render_target::WindowRenderTarget,
-};
+use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget};
 
 #[derive(Resource)]
 pub struct Drawer {
@@ -44,36 +40,36 @@ impl Drawer {
     }
 }
 
-pub fn draw(
-    pipelines: Res<Pipelines>,
+pub fn draw<const PIPELINE_ID: usize>(
+    pipelines: Res<PipelineStorage>,
     gpu: Res<Gpu>,
-    // vertex_buffers: Res<TriangleVertexBuffers>,
     mut render_targets: Query<&mut WindowRenderTarget>,
-    mut render: ResMut<Drawer>,
+    mut drawer: ResMut<Drawer>,
 ) {
     if render_targets.is_empty() {
         return;
     }
 
-    let pipeline = pipelines.storage.get(&THE_ONLY_PIPELINE).unwrap();
-    // ?????
+    let pipeline = pipelines.get(&PIPELINE_ID);
+    if pipeline.is_none() {
+        return;
+    }
+    let pipeline = pipeline.unwrap();
+
     unsafe {
         gpu.command_allocator.Reset().unwrap();
-    }
-    // ?????
-    unsafe {
-        render
+        drawer
             .command_list
-            .Reset(&gpu.command_allocator, pipeline.state.as_ref())
+            .Reset(&gpu.command_allocator, pipeline.state())
             .unwrap();
     }
 
     for mut render_target in render_targets.iter_mut() {
         unsafe {
-            render
+            drawer
                 .command_list
                 .RSSetViewports(&[render_target.viewport]);
-            render.command_list.RSSetScissorRects(&[render_target.rect]);
+            drawer.command_list.RSSetScissorRects(&[render_target.rect]);
         }
 
         let back_buffer = render_target.back_buffer();
@@ -82,30 +78,27 @@ pub fn draw(
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
-        unsafe { render.command_list.ResourceBarrier(&[barrier]) };
+        unsafe { drawer.command_list.ResourceBarrier(&[barrier]) };
 
         let rtv_handle = render_target.back_buffer_handle();
         unsafe {
-            render
+            drawer
                 .command_list
                 .OMSetRenderTargets(1, Some(&rtv_handle), false, None)
         };
 
         unsafe {
-            render.command_list.ClearRenderTargetView(
+            drawer.command_list.ClearRenderTargetView(
                 render_target.back_buffer_handle(),
                 &[0.0_f32, 0.2_f32, 0.4_f32, 1.0_f32],
                 None,
             );
         }
 
-        // for triangle in triangles.iter() {
-        // let vertex_buffer = vertex_buffers.get(&triangle).unwrap();
-        pipeline.populate_command_list(&mut render.command_list /*, vertex_buffer */);
-        // }
+        pipeline.populate_command_list(&mut drawer.command_list);
 
         unsafe {
-            render.command_list.ResourceBarrier(&[transition_barrier(
+            drawer.command_list.ResourceBarrier(&[transition_barrier(
                 back_buffer,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_PRESENT,
@@ -113,13 +106,13 @@ pub fn draw(
         }
 
         unsafe {
-            render
+            drawer
                 .command_list
                 .Close()
                 .expect("Failed to close command list");
         }
 
-        let command_list = render.command_list.cast().ok();
+        let command_list = drawer.command_list.cast().ok();
         unsafe { gpu.queue.ExecuteCommandLists(&[command_list]) };
 
         unsafe { render_target.swapchain.Present(1, DXGI_PRESENT(0)) }

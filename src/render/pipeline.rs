@@ -1,6 +1,6 @@
-use std::{collections::HashMap, ffi::c_void};
+use std::ffi::c_void;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::hashbrown::HashMap};
 use windows::{
     core::*,
     Win32::Graphics::{
@@ -9,51 +9,66 @@ use windows::{
             ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
         },
         Direct3D12::*,
-        Dxgi::Common::{DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
+        Dxgi::Common::{
+            DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_SAMPLE_DESC,
+        },
     },
 };
 
-use crate::core::Shader;
+use crate::core::{Shader, VertexBuffer};
 
 use super::Gpu;
 
-pub type PipelineId = usize;
-pub const THE_ONLY_PIPELINE: PipelineId = 0;
+type PipelineId = usize;
 
-#[derive(Default)]
-pub struct Pipeline {
-    root_signature: Option<ID3D12RootSignature>,
-    pub state: Option<ID3D12PipelineState>,
-}
+pub const PATH_TRACER_PIPELINE_ID: PipelineId = 0;
 
-#[derive(Resource)]
-pub struct Pipelines {
-    pub storage: HashMap<PipelineId, Pipeline>,
+pub trait Pipeline: Send + Sync {
+    fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
+    fn state(&self) -> &ID3D12PipelineState;
 }
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct PathTracerShader(pub Handle<Shader>);
+pub struct PipelineStorage(HashMap<PipelineId, Box<dyn Pipeline>>);
 
-impl Pipelines {
+impl PipelineStorage {
     pub fn new() -> Self {
-        Pipelines {
-            storage: HashMap::new(),
+        Self(HashMap::new())
+    }
+}
+
+pub struct PathTracerPipeline {
+    root_signature: ID3D12RootSignature,
+    vertex_buffer: VertexBuffer,
+    state: ID3D12PipelineState,
+}
+
+impl Pipeline for PathTracerPipeline {
+    fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList) {
+        unsafe {
+            command_list.SetPipelineState(&self.state);
+            command_list.SetGraphicsRootSignature(&self.root_signature);
+            command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            command_list.IASetVertexBuffers(0, Some(&[*self.vertex_buffer.view()]));
+            command_list.DrawInstanced(6, 1, 0, 0);
         }
     }
-}
 
-impl Default for Pipelines {
-    fn default() -> Self {
-        Self::new()
+    fn state(&self) -> &ID3D12PipelineState {
+        &self.state
     }
 }
 
-pub fn create_root_signature(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
-    let pipeline_entry = pipelines.storage.entry(0).or_default();
-    if pipeline_entry.root_signature.is_some() {
-        return;
-    }
+#[derive(Resource, Deref, DerefMut)]
+pub struct PathTracerShaderHandle(pub Handle<Shader>);
 
+struct PathTracerShaders {
+    vertex_shader: ID3DBlob,
+    pixel_shader: ID3DBlob,
+}
+
+pub fn create_root_signature(gpu: &Gpu) -> ID3D12RootSignature {
     let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
         Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
         ..Default::default()
@@ -80,7 +95,7 @@ pub fn create_root_signature(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
     };
     let signature =
         signature.expect("D3D12SerializeRootSignature was successful but signature is None");
-    pipeline_entry.root_signature = Some(unsafe {
+    unsafe {
         gpu.device
             .CreateRootSignature(
                 0,
@@ -90,24 +105,10 @@ pub fn create_root_signature(gpu: Res<Gpu>, mut pipelines: ResMut<Pipelines>) {
                 ),
             )
             .expect("Failed to create root signature")
-    });
+    }
 }
 
-pub fn create_pipeline_state(
-    gpu: Res<Gpu>,
-    mut pipelines: ResMut<Pipelines>,
-    shader_handle: Res<PathTracerShader>,
-    shaders: Res<Assets<Shader>>,
-) {
-    let pipeline_entry = pipelines.storage.entry(THE_ONLY_PIPELINE).or_default();
-    if pipeline_entry.state.is_some() {
-        return;
-    }
-    let shader = shaders.get(&shader_handle.0);
-    if shader.is_none() {
-        return;
-    }
-    let shader = shader.unwrap();
+fn compile_shaders(shader_source: &Shader) -> PathTracerShaders {
     let mut vertex_shader: Option<ID3DBlob> = None;
     let mut pixel_shader: Option<ID3DBlob> = None;
     let mut vertex_error_msg: Option<ID3DBlob> = None;
@@ -118,7 +119,7 @@ pub fn create_pipeline_state(
     } else {
         0
     };
-    let shader_code = shader.pcstr();
+    let shader_code = shader_source.pcstr();
     unsafe {
         let result_vs = D3DCompile(
             shader_code.as_ptr() as *const c_void,
@@ -161,13 +162,19 @@ pub fn create_pipeline_state(
         }
     }
 
-    let vertex_shader = vertex_shader
-        .as_ref()
-        .expect("Compile was successful but vertex shader is None");
-    let pixel_shader = pixel_shader
-        .as_ref()
-        .expect("Compile was successful but pixel shader is None");
+    let vertex_shader = vertex_shader.expect("Compile was successful but vertex shader is None");
+    let pixel_shader = pixel_shader.expect("Compile was successful but pixel shader is None");
+    PathTracerShaders {
+        vertex_shader,
+        pixel_shader,
+    }
+}
 
+fn create_pipeline_state(
+    gpu: &Gpu,
+    shaders: &PathTracerShaders,
+    root_signature: &ID3D12RootSignature,
+) -> ID3D12PipelineState {
     let position_element_desc = D3D12_INPUT_ELEMENT_DESC {
         SemanticName: s!("POSITION"),
         SemanticIndex: 0,
@@ -177,29 +184,33 @@ pub fn create_pipeline_state(
         InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
         InstanceDataStepRate: 0,
     };
-    let color_element_desc = D3D12_INPUT_ELEMENT_DESC {
-        SemanticName: s!("COLOR"),
+
+    let uv_element_desc = D3D12_INPUT_ELEMENT_DESC {
+        SemanticName: s!("TEXCOORD"),
         SemanticIndex: 0,
-        Format: DXGI_FORMAT_R32G32B32_FLOAT,
+        Format: DXGI_FORMAT_R32G32_FLOAT,
         InputSlot: 0,
-        AlignedByteOffset: 12,
+        AlignedByteOffset: D3D12_APPEND_ALIGNED_ELEMENT,
         InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
         InstanceDataStepRate: 0,
     };
 
+    let input_element_descs = [position_element_desc, uv_element_desc];
+    let input_layout_desc = D3D12_INPUT_LAYOUT_DESC {
+        pInputElementDescs: input_element_descs.as_ptr(),
+        NumElements: input_element_descs.len() as u32,
+    };
+
     let mut pipeline_state_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-        InputLayout: D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: [position_element_desc, color_element_desc].as_ptr(),
-            NumElements: 2,
-        },
-        pRootSignature: unsafe { std::mem::transmute_copy(&pipeline_entry.root_signature) },
+        InputLayout: input_layout_desc,
+        pRootSignature: unsafe { std::mem::transmute_copy(root_signature) },
         VS: D3D12_SHADER_BYTECODE {
-            pShaderBytecode: unsafe { vertex_shader.GetBufferPointer() },
-            BytecodeLength: unsafe { vertex_shader.GetBufferSize() },
+            pShaderBytecode: unsafe { shaders.vertex_shader.GetBufferPointer() },
+            BytecodeLength: unsafe { shaders.vertex_shader.GetBufferSize() },
         },
         PS: D3D12_SHADER_BYTECODE {
-            pShaderBytecode: unsafe { pixel_shader.GetBufferPointer() },
-            BytecodeLength: unsafe { pixel_shader.GetBufferSize() },
+            pShaderBytecode: unsafe { shaders.pixel_shader.GetBufferPointer() },
+            BytecodeLength: unsafe { shaders.pixel_shader.GetBufferSize() },
         },
         RasterizerState: D3D12_RASTERIZER_DESC {
             FillMode: D3D12_FILL_MODE_SOLID,
@@ -243,28 +254,39 @@ pub fn create_pipeline_state(
     };
     pipeline_state_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    pipeline_entry.state = Some(unsafe {
+    // Create the graphics pipeline state
+    unsafe {
         gpu.device
             .CreateGraphicsPipelineState(&pipeline_state_desc)
-            .unwrap()
-    });
+            .expect("Failed to create pipeline state")
+    }
 }
 
-impl Pipeline {
-    pub fn populate_command_list(
-        &self,
-        command_list: &mut ID3D12GraphicsCommandList,
-        // vertex_buffer: &TriangleVertexBuffer,
-    ) {
-        let pipeline_state_object = self.state.as_ref().unwrap();
-        let root_signature = self.root_signature.as_ref().unwrap();
-
-        unsafe {
-            command_list.SetPipelineState(pipeline_state_object);
-            command_list.SetGraphicsRootSignature(root_signature);
-            command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            // command_list.IASetVertexBuffers(0, Some(&[vertex_buffer.view]));
-            command_list.DrawInstanced(3, 1, 0, 0);
-        }
+pub fn create_pathtracer_pipeline(
+    gpu: Res<Gpu>,
+    shader_handle: Res<PathTracerShaderHandle>,
+    shaders: Res<Assets<Shader>>,
+    mut pipelines: ResMut<PipelineStorage>,
+) {
+    if pipelines.contains_key(&PATH_TRACER_PIPELINE_ID) {
+        return;
     }
+
+    let shader_source = shaders.get(&shader_handle.0);
+    if shader_source.is_none() {
+        return;
+    }
+
+    let compiled_shaders = compile_shaders(shader_source.unwrap());
+    let root_signature = create_root_signature(&gpu);
+    let state = create_pipeline_state(&gpu, &compiled_shaders, &root_signature);
+    let vertex_buffer = VertexBuffer::fullscreen_quad(&gpu);
+    pipelines.insert(
+        PATH_TRACER_PIPELINE_ID,
+        Box::new(PathTracerPipeline {
+            state,
+            root_signature,
+            vertex_buffer,
+        }),
+    );
 }
