@@ -4,13 +4,19 @@ struct PSInput
     float2 uv : TEXCOORD;
 };
 
+cbuffer ConstantBuffer : register(b0)
+{
+    float window_width;
+    float window_height;
+};
+
 static const float c_minimumRayHitTime = 0.01f;
 
 static const float c_rayPosNormalNudge = 0.01f;
 
 static const float c_superFar = 10000.0f;
 
-static const float c_FOVDegrees = 50.0f;
+static const float c_FOVDegrees = 70.0f;
 
 static const int c_numBounces = 10;
 
@@ -316,6 +322,10 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 rayPosition = float3(0.0f, 0.0f, 0.0f);
     float cameraDistance = 1.0f / tan(c_FOVDegrees * 0.5f * c_pi / 180.0f);
     float3 rayTarget = float3(input.uv * 2.0f - 1.0f, cameraDistance);
+
+    float aspectRatio = window_width / window_height;
+    rayTarget.y /= aspectRatio;
+
     float3 rayDir = normalize(rayTarget - rayPosition);
 
     float3 color = float3(0.0f, 0.0f, 0.0f);

@@ -9,7 +9,7 @@ use drawer::draw;
 use pipeline::{
     create_pathtracer_pipeline, PathTracerShaderHandle, PipelineStorage, PATH_TRACER_PIPELINE_ID,
 };
-use render_target::{create_render_targets, resize_swapchains_if_needed};
+use render_target::{create_render_targets, switch_frame};
 
 pub use drawer::Drawer;
 pub use gpu::Gpu;
@@ -36,13 +36,14 @@ impl Plugin for RenderPlugin {
             .insert_resource(render_target_heap)
             .insert_resource(drawer)
             .insert_resource(PipelineStorage::new())
+            .add_event::<ResizeEvent>()
             .add_systems(
                 RenderSchedule,
                 (
                     create_render_targets,
                     create_pathtracer_pipeline,
                     draw::<PATH_TRACER_PIPELINE_ID>,
-                    resize_swapchains_if_needed,
+                    switch_frame,
                 )
                     .chain(),
             );
@@ -51,3 +52,10 @@ impl Plugin for RenderPlugin {
 
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RenderSchedule;
+
+#[derive(Event)]
+pub struct ResizeEvent {
+    entity: Entity,
+    width: f32,
+    height: f32,
+}

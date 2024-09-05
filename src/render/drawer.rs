@@ -14,7 +14,7 @@ use windows::{
     },
 };
 
-use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget};
+use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget, ResizeEvent};
 
 #[derive(Resource)]
 pub struct Drawer {
@@ -41,16 +41,17 @@ impl Drawer {
 }
 
 pub fn draw<const PIPELINE_ID: usize>(
-    pipelines: Res<PipelineStorage>,
+    mut pipelines: ResMut<PipelineStorage>,
     gpu: Res<Gpu>,
-    mut render_targets: Query<&mut WindowRenderTarget>,
+    mut render_targets: Query<(&mut WindowRenderTarget, Entity)>,
     mut drawer: ResMut<Drawer>,
+    mut resize_events: EventReader<ResizeEvent>,
 ) {
     if render_targets.is_empty() {
         return;
     }
 
-    let pipeline = pipelines.get(&PIPELINE_ID);
+    let pipeline = pipelines.get_mut(&PIPELINE_ID);
     if pipeline.is_none() {
         return;
     }
@@ -64,7 +65,7 @@ pub fn draw<const PIPELINE_ID: usize>(
             .unwrap();
     }
 
-    for mut render_target in render_targets.iter_mut() {
+    for (mut render_target, entity) in render_targets.iter_mut() {
         unsafe {
             drawer
                 .command_list
@@ -95,6 +96,11 @@ pub fn draw<const PIPELINE_ID: usize>(
             );
         }
 
+        for resize_event in resize_events.read() {
+            if resize_event.entity == entity {
+                pipeline.handle_resize(resize_event.width, resize_event.height);
+            }
+        }
         pipeline.populate_command_list(&mut drawer.command_list);
 
         unsafe {

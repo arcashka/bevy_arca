@@ -2,6 +2,7 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
+        event::EventWriter,
         query::Without,
         system::{Commands, Query, Res, Resource},
     },
@@ -26,7 +27,7 @@ use windows::{
     },
 };
 
-use super::gpu::Gpu;
+use super::{gpu::Gpu, ResizeEvent};
 use crate::win_types::WinHandle;
 
 pub const FRAME_COUNT: usize = 2;
@@ -81,12 +82,13 @@ pub fn create_render_targets(
     }
 }
 
-pub fn resize_swapchains_if_needed(
-    mut windows: Query<(&Window, &mut WindowRenderTarget)>,
+pub fn switch_frame(
+    mut windows: Query<(&Window, &mut WindowRenderTarget, Entity)>,
     gpu: Res<Gpu>,
     render_target_heap: Res<RenderTargetHeap>,
+    mut resize_events: EventWriter<ResizeEvent>,
 ) {
-    for (window, mut render_target) in &mut windows {
+    for (window, mut render_target, entity) in &mut windows {
         render_target.wait_frame_finished();
         let new_swapchain_desc = create_swapchain_desc(window);
         let old_swapchain_desc = unsafe { render_target.swapchain.GetDesc1() }.unwrap();
@@ -98,6 +100,11 @@ pub fn resize_swapchains_if_needed(
                 window.width(),
                 window.height(),
             );
+            resize_events.send(ResizeEvent {
+                entity,
+                width: window.width(),
+                height: window.height(),
+            });
         }
         render_target.update_frame_index();
     }
