@@ -91,7 +91,13 @@ pub fn resize_swapchains_if_needed(
         let new_swapchain_desc = create_swapchain_desc(window);
         let old_swapchain_desc = unsafe { render_target.swapchain.GetDesc1() }.unwrap();
         if new_swapchain_desc != old_swapchain_desc {
-            render_target.handle_resize(&gpu.device, &render_target_heap, new_swapchain_desc);
+            render_target.handle_resize(
+                &gpu.device,
+                &render_target_heap,
+                new_swapchain_desc,
+                window.width(),
+                window.height(),
+            );
         }
         render_target.update_frame_index();
     }
@@ -119,8 +125,8 @@ impl WindowRenderTarget {
         .expect("failed to cast swapchain to IDXGISwapChain4");
 
         let frame_index = unsafe { swapchain.GetCurrentBackBufferIndex() };
-        let viewport = create_viewport(window);
-        let rect = create_rect(window);
+        let viewport = create_viewport(window.width(), window.height());
+        let rect = create_rect(window.width() as i32, window.height() as i32);
         let fence = create_fence(gpu);
 
         let mut window_render_target = WindowRenderTarget {
@@ -201,6 +207,8 @@ impl WindowRenderTarget {
         device: &ID3D12Device9,
         rtv_heap: &RenderTargetHeap,
         desc: DXGI_SWAP_CHAIN_DESC1,
+        width: f32,
+        height: f32,
     ) {
         self.destroy_resources();
 
@@ -214,6 +222,9 @@ impl WindowRenderTarget {
             )
         }
         .expect("ResizeBuffers failed");
+
+        self.viewport = create_viewport(width, height);
+        self.rect = create_rect(width as i32, height as i32);
 
         self.create_rtvs(device, rtv_heap);
     }
@@ -258,23 +269,23 @@ fn get_hwnd(window_handle: &RawHandleWrapperHolder) -> HWND {
     }
 }
 
-fn create_viewport(window: &Window) -> D3D12_VIEWPORT {
+fn create_viewport(width: f32, height: f32) -> D3D12_VIEWPORT {
     D3D12_VIEWPORT {
         TopLeftX: 0.0,
         TopLeftY: 0.0,
-        Width: window.physical_width() as f32,
-        Height: window.physical_height() as f32,
+        Width: width,
+        Height: height,
         MinDepth: D3D12_MIN_DEPTH,
         MaxDepth: D3D12_MAX_DEPTH,
     }
 }
 
-fn create_rect(window: &Window) -> RECT {
+fn create_rect(width: i32, height: i32) -> RECT {
     RECT {
         left: 0,
         top: 0,
-        right: window.physical_width() as i32,
-        bottom: window.physical_height() as i32,
+        right: width,
+        bottom: height,
     }
 }
 
