@@ -10,12 +10,11 @@ static const float c_rayPosNormalNudge = 0.01f;
 
 static const float c_superFar = 10000.0f;
 
-static const float c_FOVDegrees = 90.0f;
+static const float c_FOVDegrees = 50.0f;
 
 static const int c_numBounces = 10;
-// static const int c_numBounces = 8;
 
-static const int c_numRendersPerFrame = 1;
+static const int c_numRendersPerFrame = 20;
 
 static const float c_pi = 3.14159265359f;
 static const float c_twopi = 2.0f * c_pi;
@@ -170,10 +169,10 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Back wall
     {
-        float3 A = float3(-12.6f, -12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, -12.6f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, 12.6f, 25.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, 12.6f, 25.0f) + sceneTranslation;
+        float3 A = float3(-12.6f, 12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3(12.6f, 12.6f, 25.0f) + sceneTranslation;
+        float3 C = float3(12.6f, -12.6f, 25.0f) + sceneTranslation;
+        float3 D = float3(-12.6f, -12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
@@ -183,10 +182,10 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Floor
     {
-        float3 A = float3(-12.6f, -12.45f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, -12.45f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, -12.45f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, -12.45f, 15.0f) + sceneTranslation;
+        float3 A = float3(-12.6f, 12.45f, 25.0f) + sceneTranslation;
+        float3 B = float3(12.6f, 12.45f, 25.0f) + sceneTranslation;
+        float3 C = float3(12.6f, 12.45f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.6f, 12.45f, 15.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
@@ -196,10 +195,10 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Ceiling
     {
-        float3 A = float3(-12.6f, 12.5f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, 12.5f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, 12.5f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, 12.5f, 15.0f) + sceneTranslation;
+        float3 A = float3(-12.6f, -12.5f, 25.0f) + sceneTranslation;
+        float3 B = float3(12.6f, -12.5f, 25.0f) + sceneTranslation;
+        float3 C = float3(12.6f, -12.5f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.6f, -12.5f, 15.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
@@ -209,10 +208,10 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Left wall
     {
-        float3 A = float3(-12.5f, -12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(-12.5f, -12.6f, 15.0f) + sceneTranslation;
-        float3 C = float3(-12.5f, 12.6f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.5f, 12.6f, 25.0f) + sceneTranslation;
+        float3 A = float3(-12.5f, 12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3(-12.5f, 12.6f, 15.0f) + sceneTranslation;
+        float3 C = float3(-12.5f, -12.6f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.5f, -12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.7f, 0.1f, 0.1f);
@@ -222,10 +221,10 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Right wall
     {
-        float3 A = float3(12.5f, -12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.5f, -12.6f, 15.0f) + sceneTranslation;
-        float3 C = float3(12.5f, 12.6f, 15.0f) + sceneTranslation;
-        float3 D = float3(12.5f, 12.6f, 25.0f) + sceneTranslation;
+        float3 A = float3(12.5f, 12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3(12.5f, 12.6f, 15.0f) + sceneTranslation;
+        float3 C = float3(12.5f, -12.6f, 15.0f) + sceneTranslation;
+        float3 D = float3(12.5f, -12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.1f, 0.7f, 0.1f);
@@ -235,34 +234,34 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 
     // Light
     {
-        float3 A = float3(-5.0f, 12.4f, 22.5f) + sceneTranslation;
-        float3 B = float3(5.0f, 12.4f, 22.5f) + sceneTranslation;
-        float3 C = float3(5.0f, 12.4f, 17.5f) + sceneTranslation;
-        float3 D = float3(-5.0f, 12.4f, 17.5f) + sceneTranslation;
+        float3 A = float3(-5.0f, -12.4f, 22.5f) + sceneTranslation;
+        float3 B = float3(5.0f, -12.4f, 22.5f) + sceneTranslation;
+        float3 C = float3(5.0f, -12.4f, 17.5f) + sceneTranslation;
+        float3 D = float3(-5.0f, -12.4f, 17.5f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
             hitInfo.albedo = float3(0.0f, 0.0f, 0.0f);
             hitInfo.emissive = float3(1.0f, 0.9f, 0.7f) * 20.0f;
         }
-    }
+}
 
-    if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, -9.5f, 20.0f, 3.0f) + sceneTranslation4))
-    {
-        hitInfo.albedo = float3(0.9f, 0.9f, 0.75f);
-        hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-    }
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.9f, 0.9f, 0.75f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
 
-    if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, -9.5f, 20.0f, 3.0f) + sceneTranslation4))
-    {
-        hitInfo.albedo = float3(0.9f, 0.75f, 0.9f);
-        hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-    }
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.9f, 0.75f, 0.9f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
 
-    if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, -9.5f, 20.0f, 3.0f) + sceneTranslation4))
-    {
-        hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
-        hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-    }
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
 }
 
 float3 GetColorForRay(float3 startRayPos, float3 startRayDir, inout uint rngState)
