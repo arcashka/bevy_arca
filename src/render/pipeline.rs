@@ -374,16 +374,11 @@ pub fn create_pathtracer_pipeline(
     gpu: Res<Gpu>,
     shader_handle: Res<PathTracerShaderHandle>,
     shaders: Res<Assets<Shader>>,
-    render_targets: Query<&Window>,
     mut pipelines: ResMut<PipelineStorage>,
 ) {
     if pipelines.contains_key(&PATH_TRACER_PIPELINE_ID) {
         return;
     }
-    let render_target = render_targets
-        .get_single()
-        .expect("Only 1 window is supported");
-
     let shader_source = shaders.get(&shader_handle.0);
     if shader_source.is_none() {
         return;
@@ -395,13 +390,12 @@ pub fn create_pathtracer_pipeline(
     let vertex_buffer = VertexBuffer::fullscreen_quad(&gpu);
     let constant_buffer = create_constant_buffer(&gpu);
 
-    let mut pipeline = PathTracerPipeline {
+    let pipeline = PathTracerPipeline {
         state,
         root_signature,
         vertex_buffer,
         constant_buffer,
     };
-    pipeline.update_constant_buffer(render_target.width(), render_target.height());
 
     pipelines.insert(PATH_TRACER_PIPELINE_ID, Box::new(pipeline));
 }

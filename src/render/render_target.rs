@@ -71,6 +71,7 @@ pub fn create_render_targets(
     mut commands: Commands,
     gpu: Res<Gpu>,
     rtv_heap: Res<RenderTargetHeap>,
+    mut resize_events: EventWriter<ResizeEvent>,
 ) {
     for (entity, window, window_handle) in &mut windows {
         commands.entity(entity).insert(WindowRenderTarget::new(
@@ -79,6 +80,11 @@ pub fn create_render_targets(
             &gpu,
             &rtv_heap,
         ));
+        resize_events.send(ResizeEvent {
+            entity,
+            width: window.width(),
+            height: window.height(),
+        });
     }
 }
 
