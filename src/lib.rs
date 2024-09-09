@@ -1,5 +1,6 @@
 pub mod core;
 pub mod gltf;
+pub mod plugins;
 pub mod render;
 mod win_types;
 

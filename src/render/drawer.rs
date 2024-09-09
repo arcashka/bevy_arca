@@ -14,7 +14,9 @@ use windows::{
     },
 };
 
-use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget, ResizeEvent};
+use crate::core::Camera;
+
+use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget};
 
 #[derive(Resource)]
 pub struct Drawer {
@@ -43,9 +45,9 @@ impl Drawer {
 pub fn draw<const PIPELINE_ID: usize>(
     mut pipelines: ResMut<PipelineStorage>,
     gpu: Res<Gpu>,
+    cameras: Query<(&Camera, &Transform)>,
     mut render_targets: Query<(&mut WindowRenderTarget, Entity)>,
     mut drawer: ResMut<Drawer>,
-    mut resize_events: EventReader<ResizeEvent>,
 ) {
     if render_targets.is_empty() {
         return;
@@ -65,6 +67,9 @@ pub fn draw<const PIPELINE_ID: usize>(
             .unwrap();
     }
 
+    let (camera_settings, camera_transform) = cameras
+        .get_single()
+        .expect("only 1 camera is supported right now");
     for (mut render_target, entity) in render_targets.iter_mut() {
         unsafe {
             drawer
@@ -96,11 +101,10 @@ pub fn draw<const PIPELINE_ID: usize>(
             );
         }
 
-        for resize_event in resize_events.read() {
-            if resize_event.entity == entity {
-                pipeline.handle_resize(resize_event.width, resize_event.height);
-            }
-        }
+        pipeline.write_camera_data(
+            camera_settings.projection_matrix(),
+            camera_transform.compute_matrix(),
+        );
         pipeline.populate_command_list(&mut drawer.command_list);
 
         unsafe {

@@ -25,18 +25,21 @@ type PipelineId = usize;
 pub const PATH_TRACER_PIPELINE_ID: PipelineId = 0;
 
 #[repr(C)]
-struct ConstantBufferData {
-    width: f32,
-    height: f32,
-    padding: [u8; 8],
+#[derive(Copy, Clone)]
+struct CameraData {
+    view_matrix: [[f32; 4]; 4],
+    inverse_view_matrix: [[f32; 4]; 4],
+    projection_matrix: [[f32; 4]; 4],
+    inverse_projection_matrix: [[f32; 4]; 4],
 }
 
-impl ConstantBufferData {
-    fn new(width: f32, height: f32) -> Self {
+impl CameraData {
+    fn new(projection_matrix: Mat4, view_matrix: Mat4) -> Self {
         Self {
-            width,
-            height,
-            padding: [0, 0, 0, 0, 0, 0, 0, 0],
+            view_matrix: view_matrix.to_cols_array_2d(),
+            inverse_view_matrix: view_matrix.inverse().to_cols_array_2d(),
+            projection_matrix: projection_matrix.to_cols_array_2d(),
+            inverse_projection_matrix: projection_matrix.inverse().to_cols_array_2d(),
         }
     }
 }
@@ -44,7 +47,7 @@ impl ConstantBufferData {
 pub trait Pipeline: Send + Sync {
     fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
     fn state(&self) -> &ID3D12PipelineState;
-    fn handle_resize(&mut self, new_width: f32, new_height: f32);
+    fn write_camera_data(&mut self, projection_matrix: Mat4, view_matrix: Mat4);
 }
 
 #[derive(Resource, Deref, DerefMut)]
@@ -78,18 +81,8 @@ impl Pipeline for PathTracerPipeline {
         }
     }
 
-    fn handle_resize(&mut self, new_width: f32, new_height: f32) {
-        self.update_constant_buffer(new_width, new_height);
-    }
-
-    fn state(&self) -> &ID3D12PipelineState {
-        &self.state
-    }
-}
-
-impl PathTracerPipeline {
-    fn update_constant_buffer(&mut self, width: f32, height: f32) {
-        let data = ConstantBufferData::new(width, height);
+    fn write_camera_data(&mut self, projection_matrix: Mat4, view_matrix: Mat4) {
+        let data = CameraData::new(projection_matrix, view_matrix);
 
         let mut data_begin: *mut std::ffi::c_void = ptr::null_mut();
         unsafe {
@@ -97,14 +90,17 @@ impl PathTracerPipeline {
                 .Map(0, None, Some(&mut data_begin))
                 .expect("Failed to map constant buffer");
 
-            info!("data_begin: {:?}", data_begin);
             ptr::copy_nonoverlapping(
                 &data as *const _ as *const u8,
                 data_begin as *mut u8,
-                std::mem::size_of::<ConstantBufferData>(),
+                std::mem::size_of::<CameraData>(),
             );
             self.constant_buffer.Unmap(0, None);
         }
+    }
+
+    fn state(&self) -> &ID3D12PipelineState {
+        &self.state
     }
 }
 
@@ -328,7 +324,7 @@ fn create_pipeline_state(
 }
 
 fn create_constant_buffer(gpu: &Gpu) -> ID3D12Resource {
-    let constant_buffer_size = std::mem::size_of::<ConstantBufferData>() as u64;
+    let constant_buffer_size = std::mem::size_of::<CameraData>() as u64;
     let constant_buffer_desc = D3D12_RESOURCE_DESC {
         Alignment: 0,
         Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,

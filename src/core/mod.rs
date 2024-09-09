@@ -1,3 +1,4 @@
+mod camera;
 mod image;
 mod material;
 mod mesh;
@@ -6,6 +7,7 @@ mod vertex_buffer;
 
 use bevy::prelude::*;
 
+pub use camera::Camera;
 pub use image::Image;
 pub use material::Material;
 pub use mesh::Mesh;

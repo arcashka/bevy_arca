@@ -4,10 +4,11 @@ struct PSInput
     float2 uv : TEXCOORD;
 };
 
-cbuffer ConstantBuffer : register(b0)
-{
-    float window_width;
-    float window_height;
+cbuffer CameraBuffer : register(b0) {
+    matrix viewMatrix;
+    matrix invViewMatrix;
+    matrix projMatrix;
+    matrix invProjMatrix;
 };
 
 static const float c_minimumRayHitTime = 0.01f;
@@ -16,11 +17,9 @@ static const float c_rayPosNormalNudge = 0.01f;
 
 static const float c_superFar = 10000.0f;
 
-static const float c_FOVDegrees = 70.0f;
-
 static const int c_numBounces = 10;
 
-static const int c_numRendersPerFrame = 20;
+static const int c_numRendersPerFrame = 10;
 
 static const float c_pi = 3.14159265359f;
 static const float c_twopi = 2.0f * c_pi;
@@ -319,19 +318,18 @@ PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {
 float4 PSMain(PSInput input) : SV_TARGET
 {
     uint rngState = (uint(floor(input.uv.x * 32767.0f)) * 1974u + uint(floor(input.uv.y * 32767)) * 9277u) | 1;
-    float3 rayPosition = float3(0.0f, 0.0f, 0.0f);
-    float cameraDistance = 1.0f / tan(c_FOVDegrees * 0.5f * c_pi / 180.0f);
-    float3 rayTarget = float3(input.uv * 2.0f - 1.0f, cameraDistance);
-
-    float aspectRatio = window_width / window_height;
-    rayTarget.y /= aspectRatio;
-
-    float3 rayDir = normalize(rayTarget - rayPosition);
+    float2 ndc = input.uv * 2.0f - 1.0f;
+    float4 clipSpacePos = float4(ndc, 1.0f, 1.0f);
+    float4 viewSpacePos = mul(invProjMatrix, clipSpacePos);
+    viewSpacePos /= viewSpacePos.w;
+    float4 worldSpacePos = mul(invViewMatrix, viewSpacePos);
+    float3 cameraPosition = invViewMatrix[3].xyz;
+    float3 rayDir = normalize(worldSpacePos.xyz - cameraPosition);
+    float3 rayPosition = cameraPosition;
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
     for (int index = 0; index < c_numRendersPerFrame; ++index)
         color += GetColorForRay(rayPosition, rayDir, rngState) / float(c_numRendersPerFrame);
 
-    // Show the result
     return float4(color, 1.0f);
 }
