@@ -6,6 +6,7 @@ mod shader;
 mod vertex_buffer;
 
 use bevy::prelude::*;
+use camera::CameraPlugin;
 
 pub use camera::Camera;
 pub use image::Image;
@@ -29,6 +30,8 @@ impl Plugin for CorePlugin {
             .register_asset_reflect::<Image>()
             .register_asset_reflect::<Material>()
             .register_asset_loader(ShaderLoader);
+
+        app.add_plugins(CameraPlugin);
 
         app.world_mut()
             .resource_mut::<Assets<Image>>()

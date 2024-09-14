@@ -45,8 +45,8 @@ impl Drawer {
 pub fn draw<const PIPELINE_ID: usize>(
     mut pipelines: ResMut<PipelineStorage>,
     gpu: Res<Gpu>,
-    cameras: Query<(&Camera, &Transform)>,
-    mut render_targets: Query<(&mut WindowRenderTarget, Entity)>,
+    cameras: Query<(&Camera, &GlobalTransform, &Transform)>,
+    mut render_targets: Query<&mut WindowRenderTarget>,
     mut drawer: ResMut<Drawer>,
 ) {
     if render_targets.is_empty() {
@@ -67,10 +67,10 @@ pub fn draw<const PIPELINE_ID: usize>(
             .unwrap();
     }
 
-    let (camera_settings, camera_transform) = cameras
+    let (camera_settings, camera_global_transform, camera_transform) = cameras
         .get_single()
         .expect("only 1 camera is supported right now");
-    for (mut render_target, entity) in render_targets.iter_mut() {
+    for mut render_target in render_targets.iter_mut() {
         unsafe {
             drawer
                 .command_list
@@ -101,10 +101,7 @@ pub fn draw<const PIPELINE_ID: usize>(
             );
         }
 
-        pipeline.write_camera_data(
-            camera_settings.projection_matrix(),
-            camera_transform.compute_matrix(),
-        );
+        pipeline.write_camera_data(&camera_global_transform, &camera_settings);
         pipeline.populate_command_list(&mut drawer.command_list);
 
         unsafe {

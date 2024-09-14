@@ -5,10 +5,9 @@ struct PSInput
 };
 
 cbuffer CameraBuffer : register(b0) {
-    matrix viewMatrix;
     matrix invViewMatrix;
-    matrix projMatrix;
-    matrix invProjMatrix;
+    float aspectRatio;
+    float fov;
 };
 
 static const float c_minimumRayHitTime = 0.01f;
@@ -169,7 +168,7 @@ bool TestSphereTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo info, float
 
 void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
 {
-    float3 sceneTranslation = float3(0.0f, 0.0f, 10.0f);
+    float3 sceneTranslation = float3(0.0f, 0.0f, 0.0f);
     float4 sceneTranslation4 = float4(sceneTranslation, 0.0f);
 
     // Back wall
@@ -267,6 +266,23 @@ if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, 9.5f, 20.0f, 3.0f) + s
     hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
     hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
 }
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.9f, 0.9f, 0.75f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
+
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.9f, 0.75f, 0.9f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
+
+if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
+{
+    hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
+    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
+}
 }
 
 float3 GetColorForRay(float3 startRayPos, float3 startRayDir, inout uint rngState)
@@ -317,19 +333,21 @@ PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    uint rngState = (uint(floor(input.uv.x * 32767.0f)) * 1974u + uint(floor(input.uv.y * 32767)) * 9277u) | 1;
-    float2 ndc = input.uv * 2.0f - 1.0f;
-    float4 clipSpacePos = float4(ndc, 1.0f, 1.0f);
-    float4 viewSpacePos = mul(invProjMatrix, clipSpacePos);
-    viewSpacePos /= viewSpacePos.w;
-    float4 worldSpacePos = mul(invViewMatrix, viewSpacePos);
-    float3 cameraPosition = invViewMatrix[3].xyz;
-    float3 rayDir = normalize(worldSpacePos.xyz - cameraPosition);
-    float3 rayPosition = cameraPosition;
+    uint rngStateBase = (uint(floor(input.uv.x * 32767.0f)) * 1974u + uint(floor(input.uv.y * 32767.0f)) * 9277u) | 1;
+
+    float2 ndc = float2(2.0f * input.uv.x - 1.0f, 2.0f * input.uv.y - 1.0f);
+    ndc.x *= aspectRatio;
+    float scale = tan(fov * 0.5f);
+
+    float3 rayDirCameraSpace = normalize(float3(ndc.x * scale, ndc.y * scale, -1.0f));
+    float3 ray_dir = normalize(mul((float3x3)invViewMatrix, rayDirCameraSpace));
+    float3 camera_world_space = invViewMatrix._m03_m13_m23;
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
-    for (int index = 0; index < c_numRendersPerFrame; ++index)
-        color += GetColorForRay(rayPosition, rayDir, rngState) / float(c_numRendersPerFrame);
+    for (uint index = 0; index < c_numRendersPerFrame; ++index) {
+        uint rngState = rngStateBase + index * 15731u;
+        color += GetColorForRay(camera_world_space, ray_dir, rngState) / float(c_numRendersPerFrame);
+    }
 
     return float4(color, 1.0f);
 }

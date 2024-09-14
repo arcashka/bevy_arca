@@ -60,7 +60,7 @@ impl Default for CameraController {
             keyboard_key_toggle_cursor_grab: KeyCode::KeyM,
             walk_speed: 5.0,
             run_speed: 15.0,
-            scroll_factor: 0.1,
+            scroll_factor: 0.01,
             friction: 0.5,
             pitch: 0.0,
             yaw: 0.0,
@@ -106,11 +106,11 @@ fn run_camera_controller(
     key_input: Res<ButtonInput<KeyCode>>,
     mut toggle_cursor_grab: Local<bool>,
     mut mouse_cursor_grab: Local<bool>,
-    mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
+    mut query: Query<(&mut Transform, &mut CameraController, &mut Camera)>,
 ) {
     let dt = time.delta_seconds();
 
-    if let Ok((mut transform, mut controller)) = query.get_single_mut() {
+    if let Ok((mut transform, mut controller, mut camera)) = query.get_single_mut() {
         if !controller.initialized {
             let (yaw, pitch, _roll) = transform.rotation.to_euler(EulerRot::YXZ);
             controller.yaw = yaw;
@@ -122,15 +122,12 @@ fn run_camera_controller(
             return;
         }
 
-        let mut scroll = 0.0;
-
-        let amount = match accumulated_mouse_scroll.unit {
-            MouseScrollUnit::Line => accumulated_mouse_scroll.delta.y,
-            MouseScrollUnit::Pixel => accumulated_mouse_scroll.delta.y / 16.0,
+        camera.fov += match accumulated_mouse_scroll.unit {
+            MouseScrollUnit::Line => accumulated_mouse_scroll.delta.y * controller.scroll_factor,
+            MouseScrollUnit::Pixel => {
+                accumulated_mouse_scroll.delta.y * controller.scroll_factor / 16.0
+            }
         };
-        scroll += amount;
-        controller.walk_speed += scroll * controller.scroll_factor * controller.walk_speed;
-        controller.run_speed = controller.walk_speed * 3.0;
 
         // Handle key input
         let mut axis_input = Vec3::ZERO;

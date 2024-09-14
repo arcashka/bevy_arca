@@ -55,7 +55,7 @@ pub struct RenderSchedule;
 
 #[derive(Event)]
 pub struct ResizeEvent {
-    entity: Entity,
-    width: f32,
-    height: f32,
+    pub entity: Entity,
+    pub width: f32,
+    pub height: f32,
 }

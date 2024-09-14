@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr};
+use std::{ffi::c_void, ops::Neg, ptr};
 
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use windows::{
@@ -16,7 +16,7 @@ use windows::{
     },
 };
 
-use crate::core::{Shader, VertexBuffer};
+use crate::core::{Camera, Shader, VertexBuffer};
 
 use super::Gpu;
 
@@ -27,19 +27,25 @@ pub const PATH_TRACER_PIPELINE_ID: PipelineId = 0;
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct CameraData {
-    view_matrix: [[f32; 4]; 4],
     inverse_view_matrix: [[f32; 4]; 4],
-    projection_matrix: [[f32; 4]; 4],
-    inverse_projection_matrix: [[f32; 4]; 4],
+    aspect_ratio: f32,
+    fov: f32,
 }
 
 impl CameraData {
-    fn new(projection_matrix: Mat4, view_matrix: Mat4) -> Self {
+    fn new(transform: &GlobalTransform, camera: &Camera) -> Self {
+        let forward = transform.forward() * 1.0;
+        let up = transform.up() * 1.0;
+        let eye_position = -transform.translation();
+        let target_position = eye_position + forward;
+
+        let view_matrix = Mat4::look_at_lh(eye_position, target_position, up);
+        let inverse_view_matrix = view_matrix.inverse();
+
         Self {
-            view_matrix: view_matrix.to_cols_array_2d(),
-            inverse_view_matrix: view_matrix.inverse().to_cols_array_2d(),
-            projection_matrix: projection_matrix.to_cols_array_2d(),
-            inverse_projection_matrix: projection_matrix.inverse().to_cols_array_2d(),
+            inverse_view_matrix: inverse_view_matrix.to_cols_array_2d(),
+            aspect_ratio: camera.aspect_ratio,
+            fov: camera.fov,
         }
     }
 }
@@ -47,7 +53,7 @@ impl CameraData {
 pub trait Pipeline: Send + Sync {
     fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
     fn state(&self) -> &ID3D12PipelineState;
-    fn write_camera_data(&mut self, projection_matrix: Mat4, view_matrix: Mat4);
+    fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera);
 }
 
 #[derive(Resource, Deref, DerefMut)]
@@ -81,8 +87,8 @@ impl Pipeline for PathTracerPipeline {
         }
     }
 
-    fn write_camera_data(&mut self, projection_matrix: Mat4, view_matrix: Mat4) {
-        let data = CameraData::new(projection_matrix, view_matrix);
+    fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera) {
+        let data = CameraData::new(transform, camera);
 
         let mut data_begin: *mut std::ffi::c_void = ptr::null_mut();
         unsafe {
