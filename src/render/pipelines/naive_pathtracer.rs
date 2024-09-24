@@ -1,6 +1,6 @@
-use std::{ffi::c_void, ops::Neg, ptr};
+use std::{ffi::c_void, ptr};
 
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::prelude::*;
 use windows::{
     core::*,
     Win32::Graphics::{
@@ -16,54 +16,12 @@ use windows::{
     },
 };
 
-use crate::core::{Camera, Shader, VertexBuffer};
+use crate::{
+    core::{Camera, Shader, VertexBuffer},
+    render::Gpu,
+};
 
-use super::Gpu;
-
-type PipelineId = usize;
-
-pub const PATH_TRACER_PIPELINE_ID: PipelineId = 0;
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct CameraData {
-    inverse_view_matrix: [[f32; 4]; 4],
-    aspect_ratio: f32,
-    fov: f32,
-}
-
-impl CameraData {
-    fn new(transform: &GlobalTransform, camera: &Camera) -> Self {
-        let forward = transform.forward() * 1.0;
-        let up = transform.up() * 1.0;
-        let eye_position = -transform.translation();
-        let target_position = eye_position + forward;
-
-        let view_matrix = Mat4::look_at_lh(eye_position, target_position, up);
-        let inverse_view_matrix = view_matrix.inverse();
-
-        Self {
-            inverse_view_matrix: inverse_view_matrix.to_cols_array_2d(),
-            aspect_ratio: camera.aspect_ratio,
-            fov: camera.fov,
-        }
-    }
-}
-
-pub trait Pipeline: Send + Sync {
-    fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
-    fn state(&self) -> &ID3D12PipelineState;
-    fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera);
-}
-
-#[derive(Resource, Deref, DerefMut)]
-pub struct PipelineStorage(HashMap<PipelineId, Box<dyn Pipeline>>);
-
-impl PipelineStorage {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-}
+use super::{CameraData, Pipeline, PipelineStorage, PATH_TRACER_PIPELINE_ID};
 
 pub struct PathTracerPipeline {
     root_signature: ID3D12RootSignature,

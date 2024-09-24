@@ -16,7 +16,7 @@ use windows::{
 
 use crate::core::Camera;
 
-use super::{gpu::Gpu, pipeline::PipelineStorage, render_target::WindowRenderTarget};
+use super::{gpu::Gpu, pipelines::PipelineStorage, render_target::WindowRenderTarget};
 
 #[derive(Resource)]
 pub struct Drawer {

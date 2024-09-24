@@ -1,12 +1,12 @@
 mod drawer;
 mod gpu;
-mod pipeline;
+mod pipelines;
 mod render_target;
 
 use bevy::{app::MainScheduleOrder, ecs::schedule::ScheduleLabel, prelude::*};
 
 use drawer::draw;
-use pipeline::{
+use pipelines::{
     create_pathtracer_pipeline, PathTracerShaderHandle, PipelineStorage, PATH_TRACER_PIPELINE_ID,
 };
 use render_target::{create_render_targets, switch_frame};
