@@ -3,7 +3,9 @@ mod naive_pathtracer;
 use bevy::{prelude::*, utils::HashMap};
 use windows::Win32::Graphics::Direct3D12::{ID3D12GraphicsCommandList, ID3D12PipelineState};
 
-use crate::core::Camera;
+use crate::core::{Camera, MeshData};
+
+pub use naive_pathtracer::{create_pathtracer_pipeline, PathTracerShaderHandle};
 
 type PipelineId = usize;
 
@@ -13,12 +15,11 @@ pub trait Pipeline: Send + Sync {
     fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
     fn state(&self) -> &ID3D12PipelineState;
     fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera);
+    fn set_mesh_data(&mut self, data: &MeshData);
 }
 
 #[derive(Resource, Deref, DerefMut)]
 pub struct PipelineStorage(HashMap<PipelineId, Box<dyn Pipeline>>);
-
-pub use naive_pathtracer::{create_pathtracer_pipeline, PathTracerShaderHandle};
 
 impl PipelineStorage {
     pub fn new() -> Self {

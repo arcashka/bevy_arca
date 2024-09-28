@@ -1,3 +1,4 @@
+mod descriptor_heap;
 mod drawer;
 mod gpu;
 mod pipelines;
@@ -9,11 +10,14 @@ use drawer::draw;
 use pipelines::{
     create_pathtracer_pipeline, PathTracerShaderHandle, PipelineStorage, PATH_TRACER_PIPELINE_ID,
 };
-use render_target::{create_render_targets, switch_frame};
+use render_target::{create_render_targets, switch_frame, RtvHeap, FRAME_COUNT};
 
+pub use descriptor_heap::DescriptorHeap;
 pub use drawer::Drawer;
 pub use gpu::Gpu;
-pub use render_target::RenderTargetHeap;
+use windows::Win32::Graphics::Direct3D12::{
+    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+};
 
 pub struct RenderPlugin;
 
@@ -26,16 +30,21 @@ impl Plugin for RenderPlugin {
 
         let gpu = unsafe { Gpu::new(false) }.expect("Failed to initialize renderer");
         let drawer = Drawer::new(&gpu);
-        let render_target_heap = RenderTargetHeap::new(&gpu);
 
         let asset_server = app.world_mut().resource_mut::<AssetServer>();
         let shader_handle = asset_server.load("demo.hlsl");
+        let rtv_heap = DescriptorHeap::new(
+            &gpu,
+            D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+            FRAME_COUNT,
+            D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        );
 
         app.insert_resource(gpu)
             .insert_resource(PathTracerShaderHandle(shader_handle))
-            .insert_resource(render_target_heap)
             .insert_resource(drawer)
             .insert_resource(PipelineStorage::new())
+            .insert_resource(RtvHeap(rtv_heap))
             .add_event::<ResizeEvent>()
             .add_systems(
                 RenderSchedule,

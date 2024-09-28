@@ -186,7 +186,7 @@ async fn load_gltf<'a, 'b, 'c>(
                         DataType::F32,
                         "Only f32 positions are supported"
                     );
-                    mesh.insert_positions(read_attributes(&accessor, &buffer_data));
+                    mesh.positions = read_attributes(&accessor, &buffer_data);
                 }
                 if semantic == Semantic::Normals {
                     assert_eq!(
@@ -199,14 +199,14 @@ async fn load_gltf<'a, 'b, 'c>(
                         DataType::F32,
                         "Only f32 normals are supported"
                     );
-                    mesh.insert_normals(read_attributes(&accessor, &buffer_data));
+                    mesh.normals = Some(read_attributes(&accessor, &buffer_data));
                 }
             }
 
             // Read vertex indices
             let reader = primitive.reader(|buffer| Some(buffer_data[buffer.index()].as_slice()));
             if let Some(indices) = reader.read_indices() {
-                mesh.insert_indices(match indices {
+                mesh.indices = Some(match indices {
                     ReadIndices::U8(is) => is.map(|x| x as u32).collect(),
                     ReadIndices::U16(is) => is.map(|x| x as u32).collect(),
                     ReadIndices::U32(is) => is.collect(),
@@ -452,7 +452,7 @@ fn load_node(
                 let material_handle = material_label.map_or(Handle::default(), |label| {
                     load_context.get_label_handle::<Material>(label.to_string())
                 });
-                parent.spawn((mesh_handle, material_handle));
+                parent.spawn((mesh_handle, material_handle, GlobalTransform::default()));
             }
         }
 

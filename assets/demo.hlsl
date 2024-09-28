@@ -10,6 +10,10 @@ cbuffer CameraBuffer : register(b0) {
     float fov;
 };
 
+StructuredBuffer<float3> vertexBuffer : register(t0);
+
+StructuredBuffer<uint> indexBuffer : register(t1);
+
 static const float c_minimumRayHitTime = 0.01f;
 
 static const float c_rayPosNormalNudge = 0.01f;
@@ -22,6 +26,12 @@ static const int c_numRendersPerFrame = 10;
 
 static const float c_pi = 3.14159265359f;
 static const float c_twopi = 2.0f * c_pi;
+
+struct Ray
+{
+    float3 origin;
+    float3 direction;
+};
 
 uint wang_hash(inout uint seed)
 {
@@ -48,280 +58,81 @@ float3 RandomUnitVector(inout uint state)
     return float3(x, y, z);
 }
 
-struct SRayHitInfo
+bool RayIntersectsTriangle(Ray ray, float3 v0, float3 v1, float3 v2, out float t)
 {
-    float dist;
-    float3 normal;
-    float3 albedo;
-    float3 emissive;
-};
+    float3 edge1 = v1 - v0;
+    float3 edge2 = v2 - v0;
+    float3 h = cross(ray.direction, edge2);
+    float a = dot(edge1, h);
 
-float ScalarTriple(float3 u, float3 v, float3 w)
-{
-    return dot(cross(u, v), w);
+    if (abs(a) < 0.000001)
+        return false; // Ray is parallel to triangle
+
+    float f = 1.0 / a;
+    float3 s = ray.origin - v0;
+    float u = f * dot(s, h);
+    if (u < 0.0 || u > 1.0)
+        return false;
+
+    float3 q = cross(s, edge1);
+    float v = f * dot(ray.direction, q);
+    if (v < 0.0 || u + v > 1.0)
+        return false;
+
+    t = f * dot(edge2, q);
+    if (t > c_minimumRayHitTime)
+        return true;
+    else
+        return false;
 }
 
-bool TestQuadTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo info, float3 a, float3 b, float3 c, float3 d)
+float3 GetColorForRay(float3 origin, float3 direction, inout uint rngState)
 {
-    float3 normal = normalize(cross(c - a, c - b));
-    if (dot(normal, rayDir) > 0.0f)
-    {
-        normal *= -1.0f;
-        float3 temp = d;
-        d = a;
-        a = temp;
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = direction;
 
-        temp = b;
-        b = c;
-        c = temp;
+    float minDistance = c_superFar;
+    float3 hitColor = float3(0.0f, 0.0f, 0.0f);
+    bool hit = false;
+
+    // Loop over all triangles
+    for (uint i = 0; i < 300; i += 3)
+    {
+        // Get vertex indices
+        uint index0 = indexBuffer[i];
+        uint index1 = indexBuffer[i + 1];
+        uint index2 = indexBuffer[i + 2];
+
+        // Get vertex positions
+        float3 v0 = vertexBuffer[index0];
+        float3 v1 = vertexBuffer[index1];
+        float3 v2 = vertexBuffer[index2];
+
+        // Perform ray-triangle intersection
+        float t;
+        if (RayIntersectsTriangle(ray, v0, v1, v2, t))
+        {
+            if (t < minDistance)
+            {
+                minDistance = t;
+                hit = true;
+                // For simplicity, set hitColor based on normal or any desired value
+                float3 normal = normalize(cross(v1 - v0, v2 - v0));
+                hitColor = 0.5f * (normal + 1.0f); // Simple normal-based coloring
+            }
+        }
     }
 
-    float3 p = rayPos;
-    float3 q = rayPos + rayDir;
-    float3 pq = q - p;
-    float3 pa = a - p;
-    float3 pb = b - p;
-    float3 pc = c - p;
-
-    float3 m = cross(pc, pq);
-    float v = dot(pa, m);
-    float3 intersectPos;
-    if (v >= 0.0f)
+    if (hit)
     {
-        // Test against triangle a, b, c
-        float u = -dot(pb, m);
-        if (u < 0.0f) return false;
-        float w = ScalarTriple(pq, pb, pa);
-        if (w < 0.0f) return false;
-        float denom = 1.0f / (u + v + w);
-        u *= denom;
-        v *= denom;
-        w *= denom;
-        intersectPos = u * a + v * b + w * c;
+        return hitColor;
     }
     else
     {
-        float3 pd = d - p;
-        float u = dot(pd, m);
-        if (u < 0.0f) return false;
-        float w = ScalarTriple(pq, pa, pd);
-        if (w < 0.0f) return false;
-        v = -v;
-        float denom = 1.0f / (u + v + w);
-        u *= denom;
-        v *= denom;
-        w *= denom;
-        intersectPos = u * a + v * d + w * c;
+        // Return background color
+        return float3(0.4f, 0.4f, 0.4f);
     }
-
-    float dist;
-    if (abs(rayDir.x) > 0.1f)
-    {
-        dist = (intersectPos.x - rayPos.x) / rayDir.x;
-    }
-    else if (abs(rayDir.y) > 0.1f)
-    {
-        dist = (intersectPos.y - rayPos.y) / rayDir.y;
-    }
-    else
-    {
-        dist = (intersectPos.z - rayPos.z) / rayDir.z;
-    }
-
-    if (dist > c_minimumRayHitTime && dist < info.dist)
-    {
-        info.dist = dist;
-        info.normal = normal;
-        return true;
-    }
-
-    return false;
-}
-
-bool TestSphereTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo info, float4 sphere)
-{
-    float3 m = rayPos - sphere.xyz;
-    float b = dot(m, rayDir);
-    float c = dot(m, m) - sphere.w * sphere.w;
-    if (c > 0.0f && b > 0.0f)
-        return false;
-    float discr = b * b - c;
-    if (discr < 0.0f)
-        return false;
-    bool fromInside = false;
-    float dist = -b - sqrt(discr);
-    if (dist < 0.0f)
-    {
-        fromInside = true;
-        dist = -b + sqrt(discr);
-    }
-
-    if (dist > c_minimumRayHitTime && dist < info.dist)
-    {
-        info.dist = dist;
-        info.normal = normalize((rayPos + rayDir * dist) - sphere.xyz) * (fromInside ? -1.0f : 1.0f);
-        return true;
-    }
-
-    return false;
-}
-
-void TestSceneTrace(float3 rayPos, float3 rayDir, inout SRayHitInfo hitInfo)
-{
-    float3 sceneTranslation = float3(0.0f, 0.0f, 0.0f);
-    float4 sceneTranslation4 = float4(sceneTranslation, 0.0f);
-
-    // Back wall
-    {
-        float3 A = float3(-12.6f, 12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, 12.6f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, -12.6f, 25.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, -12.6f, 25.0f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        }
-    }
-
-    // Floor
-    {
-        float3 A = float3(-12.6f, 12.45f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, 12.45f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, 12.45f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, 12.45f, 15.0f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        }
-    }
-
-    // Ceiling
-    {
-        float3 A = float3(-12.6f, -12.5f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.6f, -12.5f, 25.0f) + sceneTranslation;
-        float3 C = float3(12.6f, -12.5f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.6f, -12.5f, 15.0f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        }
-    }
-
-    // Left wall
-    {
-        float3 A = float3(-12.5f, 12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(-12.5f, 12.6f, 15.0f) + sceneTranslation;
-        float3 C = float3(-12.5f, -12.6f, 15.0f) + sceneTranslation;
-        float3 D = float3(-12.5f, -12.6f, 25.0f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.7f, 0.1f, 0.1f);
-            hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        }
-    }
-
-    // Right wall
-    {
-        float3 A = float3(12.5f, 12.6f, 25.0f) + sceneTranslation;
-        float3 B = float3(12.5f, 12.6f, 15.0f) + sceneTranslation;
-        float3 C = float3(12.5f, -12.6f, 15.0f) + sceneTranslation;
-        float3 D = float3(12.5f, -12.6f, 25.0f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.1f, 0.7f, 0.1f);
-            hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        }
-    }
-
-    // Light
-    {
-        float3 A = float3(-5.0f, -12.4f, 22.5f) + sceneTranslation;
-        float3 B = float3(5.0f, -12.4f, 22.5f) + sceneTranslation;
-        float3 C = float3(5.0f, -12.4f, 17.5f) + sceneTranslation;
-        float3 D = float3(-5.0f, -12.4f, 17.5f) + sceneTranslation;
-        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
-        {
-            hitInfo.albedo = float3(0.0f, 0.0f, 0.0f);
-            hitInfo.emissive = float3(1.0f, 0.9f, 0.7f) * 20.0f;
-        }
-}
-
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.9f, 0.9f, 0.75f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.9f, 0.75f, 0.9f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, 9.5f, 20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.9f, 0.9f, 0.75f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.9f, 0.75f, 0.9f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-
-if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, 9.5f, -20.0f, 3.0f) + sceneTranslation4))
-{
-    hitInfo.albedo = float3(0.75f, 0.9f, 0.9f);
-    hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-}
-}
-
-float3 GetColorForRay(float3 startRayPos, float3 startRayDir, inout uint rngState)
-{
-    // Initialize
-    float3 ret = float3(0.0f, 0.0f, 0.0f);
-    float3 throughput = float3(1.0f, 1.0f, 1.0f);
-    float3 rayPos = startRayPos;
-    float3 rayDir = startRayDir;
-
-    for (int bounceIndex = 0; bounceIndex <= c_numBounces; ++bounceIndex)
-    {
-        SRayHitInfo hitInfo;
-        hitInfo.dist = c_superFar;
-        hitInfo.normal = float3(0.0f, 0.0f, 0.0f);
-        hitInfo.albedo = float3(0.0f, 0.0f, 0.0f);
-        hitInfo.emissive = float3(0.0f, 0.0f, 0.0f);
-        TestSceneTrace(rayPos, rayDir, hitInfo);
-
-        if (hitInfo.dist == c_superFar)
-        {
-            ret += float3(0.7f, 0.7f, 0.7f) * throughput;
-            break;
-        }
-
-        // Update the ray position
-        rayPos = (rayPos + rayDir * hitInfo.dist) + hitInfo.normal * c_rayPosNormalNudge;
-
-        // Calculate new ray direction, in a cosine weighted hemisphere oriented at normal
-        rayDir = normalize(hitInfo.normal + RandomUnitVector(rngState));
-
-        // Add in emissive lighting
-        ret += hitInfo.emissive * throughput;
-
-        // Update the colorMultiplier
-        throughput *= hitInfo.albedo;
-    }
-
-    return ret;
 }
 
 PSInput VSMain(float4 position : POSITION, float2 uv : TEXCOORD) {

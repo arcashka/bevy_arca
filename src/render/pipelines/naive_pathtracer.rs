@@ -17,8 +17,8 @@ use windows::{
 };
 
 use crate::{
-    core::{Camera, Shader, VertexBuffer},
-    render::Gpu,
+    core::{Camera, MeshBuffer, MeshData, Shader, VertexBuffer},
+    render::{DescriptorHeap, Gpu},
 };
 
 use super::{CameraData, Pipeline, PipelineStorage, PATH_TRACER_PIPELINE_ID};
@@ -28,16 +28,23 @@ pub struct PathTracerPipeline {
     vertex_buffer: VertexBuffer,
     state: ID3D12PipelineState,
     constant_buffer: ID3D12Resource,
+    mesh_buffer: MeshBuffer,
+    srv_heap: DescriptorHeap,
 }
 
 impl Pipeline for PathTracerPipeline {
     fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList) {
         unsafe {
             command_list.SetPipelineState(&self.state);
+            command_list.SetDescriptorHeaps(&[Some(self.srv_heap.heap())]);
             command_list.SetGraphicsRootSignature(&self.root_signature);
 
-            let buffer_address = self.constant_buffer.GetGPUVirtualAddress();
-            command_list.SetGraphicsRootConstantBufferView(0, buffer_address);
+            // TODO: don't do it every frame
+            self.mesh_buffer.upload(command_list);
+
+            let constant_buffer_address = self.constant_buffer.GetGPUVirtualAddress();
+            command_list.SetGraphicsRootConstantBufferView(0, constant_buffer_address);
+            command_list.SetGraphicsRootDescriptorTable(1, self.srv_heap.gpu_handle());
 
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             command_list.IASetVertexBuffers(0, Some(&[*self.vertex_buffer.view()]));
@@ -66,6 +73,10 @@ impl Pipeline for PathTracerPipeline {
     fn state(&self) -> &ID3D12PipelineState {
         &self.state
     }
+
+    fn set_mesh_data(&mut self, data: &MeshData) {
+        self.mesh_buffer.set_new_data(data);
+    }
 }
 
 #[derive(Resource, Deref, DerefMut)]
@@ -77,27 +88,49 @@ struct PathTracerShaders {
 }
 
 pub fn create_root_signature(gpu: &Gpu) -> ID3D12RootSignature {
-    let root_descriptor = D3D12_ROOT_DESCRIPTOR {
+    let ranges = [D3D12_DESCRIPTOR_RANGE {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 2,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    let descriptor_table_srv = D3D12_ROOT_DESCRIPTOR_TABLE {
+        NumDescriptorRanges: ranges.len() as u32,
+        pDescriptorRanges: ranges.as_ptr(),
+    };
+
+    let root_parameter_srv = D3D12_ROOT_PARAMETER {
+        ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+        ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+        Anonymous: D3D12_ROOT_PARAMETER_0 {
+            DescriptorTable: descriptor_table_srv,
+        },
+    };
+
+    let root_descriptor_cbv = D3D12_ROOT_DESCRIPTOR {
         ShaderRegister: 0,
         RegisterSpace: 0,
     };
 
-    let root_parameter_0 = D3D12_ROOT_PARAMETER_0 {
-        Descriptor: root_descriptor,
-    };
-    let root_parameter = D3D12_ROOT_PARAMETER {
+    let root_parameter_cbv = D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_CBV,
-        Anonymous: root_parameter_0,
         ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+        Anonymous: D3D12_ROOT_PARAMETER_0 {
+            Descriptor: root_descriptor_cbv,
+        },
     };
 
+    let root_parameters = [root_parameter_cbv, root_parameter_srv];
     let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
         Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
-        NumParameters: 1,
+        NumParameters: root_parameters.len() as u32,
+        pParameters: root_parameters.as_ptr(),
         NumStaticSamplers: 0,
         pStaticSamplers: std::ptr::null(),
-        pParameters: &root_parameter,
     };
+
     let mut signature: Option<ID3DBlob> = None;
     let mut error: Option<ID3DBlob> = None;
 
@@ -279,7 +312,6 @@ fn create_pipeline_state(
     };
     pipeline_state_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    // Create the graphics pipeline state
     unsafe {
         gpu.device
             .CreateGraphicsPipelineState(&pipeline_state_desc)
@@ -339,6 +371,7 @@ pub fn create_pathtracer_pipeline(
     if pipelines.contains_key(&PATH_TRACER_PIPELINE_ID) {
         return;
     }
+
     let shader_source = shaders.get(&shader_handle.0);
     if shader_source.is_none() {
         return;
@@ -349,12 +382,25 @@ pub fn create_pathtracer_pipeline(
     let state = create_pipeline_state(&gpu, &compiled_shaders, &root_signature);
     let vertex_buffer = VertexBuffer::fullscreen_quad(&gpu);
     let constant_buffer = create_constant_buffer(&gpu);
+    let mesh_buffer = MeshBuffer::new(&gpu);
+    let mut srv_heap = DescriptorHeap::new(
+        &gpu,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+        2,
+        D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    );
+
+    // TODO: shouldn't be like this. like wtf
+    let _ = mesh_buffer.srv_vertex(&gpu, &mut srv_heap);
+    let _ = mesh_buffer.srv_index(&gpu, &mut srv_heap);
 
     let pipeline = PathTracerPipeline {
         state,
         root_signature,
         vertex_buffer,
         constant_buffer,
+        mesh_buffer,
+        srv_heap,
     };
 
     pipelines.insert(PATH_TRACER_PIPELINE_ID, Box::new(pipeline));

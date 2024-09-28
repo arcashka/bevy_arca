@@ -1,14 +1,4 @@
-use bevy::{
-    ecs::{
-        component::Component,
-        entity::Entity,
-        event::EventWriter,
-        query::Without,
-        system::{Commands, Query, Res, Resource},
-    },
-    prelude::Deref,
-    window::{RawHandleWrapperHolder, Window},
-};
+use bevy::{prelude::*, window::RawHandleWrapperHolder};
 
 use raw_window_handle::RawWindowHandle;
 use smallvec::SmallVec;
@@ -27,27 +17,10 @@ use windows::{
     },
 };
 
-use super::{gpu::Gpu, ResizeEvent};
+use super::{gpu::Gpu, DescriptorHeap, ResizeEvent};
 use crate::win_types::WinHandle;
 
 pub const FRAME_COUNT: usize = 2;
-
-#[derive(Resource, Deref)]
-pub struct RenderTargetHeap(pub ID3D12DescriptorHeap);
-
-impl RenderTargetHeap {
-    pub fn new(gpu: &Gpu) -> Self {
-        RenderTargetHeap(unsafe {
-            gpu.device
-                .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                    NumDescriptors: FRAME_COUNT as u32,
-                    ..Default::default()
-                })
-                .expect("Failed to create Descriptor Heap")
-        })
-    }
-}
 
 struct Fence {
     fence: ID3D12Fence,
@@ -66,11 +39,14 @@ pub struct WindowRenderTarget {
     pub rect: RECT,
 }
 
+#[derive(Resource, Deref, DerefMut)]
+pub struct RtvHeap(pub DescriptorHeap);
+
 pub fn create_render_targets(
     mut windows: Query<(Entity, &Window, &RawHandleWrapperHolder), Without<WindowRenderTarget>>,
     mut commands: Commands,
+    mut rtv_heap: ResMut<RtvHeap>,
     gpu: Res<Gpu>,
-    rtv_heap: Res<RenderTargetHeap>,
     mut resize_events: EventWriter<ResizeEvent>,
 ) {
     for (entity, window, window_handle) in &mut windows {
@@ -78,7 +54,7 @@ pub fn create_render_targets(
             window,
             window_handle,
             &gpu,
-            &rtv_heap,
+            &mut rtv_heap,
         ));
         resize_events.send(ResizeEvent {
             entity,
@@ -91,7 +67,7 @@ pub fn create_render_targets(
 pub fn switch_frame(
     mut windows: Query<(&Window, &mut WindowRenderTarget, Entity)>,
     gpu: Res<Gpu>,
-    render_target_heap: Res<RenderTargetHeap>,
+    mut rtv_heap: ResMut<RtvHeap>,
     mut resize_events: EventWriter<ResizeEvent>,
 ) {
     for (window, mut render_target, entity) in &mut windows {
@@ -101,7 +77,7 @@ pub fn switch_frame(
         if new_swapchain_desc != old_swapchain_desc {
             render_target.handle_resize(
                 &gpu.device,
-                &render_target_heap,
+                &mut rtv_heap,
                 new_swapchain_desc,
                 window.width(),
                 window.height(),
@@ -121,7 +97,7 @@ impl WindowRenderTarget {
         window: &Window,
         window_handle: &RawHandleWrapperHolder,
         gpu: &Gpu,
-        rtv_heap: &RenderTargetHeap,
+        rtv_heap: &mut DescriptorHeap,
     ) -> Self {
         let desc = create_swapchain_desc(window);
         let swapchain = unsafe {
@@ -193,14 +169,10 @@ impl WindowRenderTarget {
         }
     }
 
-    fn create_rtvs(&mut self, device: &ID3D12Device9, rtv_heap: &RenderTargetHeap) {
-        let heap_increment =
-            unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) }
-                as usize;
-        let mut handle = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
-
+    fn create_rtvs(&mut self, device: &ID3D12Device9, rtv_heap: &mut DescriptorHeap) {
         (0..FRAME_COUNT).for_each(|i| {
             let rtv = unsafe { self.swapchain.GetBuffer::<ID3D12Resource>(i as u32) }.unwrap();
+            let handle = rtv_heap.cpu_handle();
             unsafe { device.CreateRenderTargetView(&rtv, None, handle) };
 
             if self.rtv_handles.len() == i {
@@ -210,15 +182,13 @@ impl WindowRenderTarget {
                 self.rtv_handles[i] = handle;
                 self.rtvs[i] = rtv;
             }
-
-            handle.ptr += heap_increment;
         });
     }
 
     fn handle_resize(
         &mut self,
         device: &ID3D12Device9,
-        rtv_heap: &RenderTargetHeap,
+        rtv_heap: &mut DescriptorHeap,
         desc: DXGI_SWAP_CHAIN_DESC1,
         width: f32,
         height: f32,

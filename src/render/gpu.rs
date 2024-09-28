@@ -25,13 +25,16 @@ impl Gpu {
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(use_warp: bool) -> Result<Self, Error> {
         let mut factory_flags = DXGI_CREATE_FACTORY_FLAGS(0);
-        if cfg!(debug_assertions) {
-            let mut debug_interface: Option<ID3D12Debug3> = None;
+
+        let enable_debug_layer = cfg!(debug_assertions);
+
+        if enable_debug_layer {
+            let mut debug_interface: Option<ID3D12Debug4> = None;
             D3D12GetDebugInterface(&mut debug_interface)?;
             let debug_interface = debug_interface.unwrap();
+
             debug_interface.EnableDebugLayer();
             debug_interface.SetEnableGPUBasedValidation(true);
-
             factory_flags = DXGI_CREATE_FACTORY_DEBUG;
         }
 
@@ -47,16 +50,18 @@ impl Gpu {
         D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_2, &mut device)?;
         let device = device.unwrap();
 
-        let info_queue = device.cast::<ID3D12InfoQueue1>()?;
-        let mut cookie = 0;
-        info_queue.RegisterMessageCallback(
-            Some(log_debug_layer_message),
-            D3D12_MESSAGE_CALLBACK_FLAG_NONE,
-            ptr::null_mut(),
-            &mut cookie,
-        )?;
-        if cookie == 0 {
-            panic!("Failed to register debug layer callback");
+        if enable_debug_layer {
+            let info_queue = device.cast::<ID3D12InfoQueue1>()?;
+            let mut cookie = 0;
+            info_queue.RegisterMessageCallback(
+                Some(log_debug_layer_message),
+                D3D12_MESSAGE_CALLBACK_FLAG_NONE,
+                ptr::null_mut(),
+                &mut cookie,
+            )?;
+            if cookie == 0 {
+                panic!("Failed to register debug layer callback");
+            }
         }
 
         let queue: ID3D12CommandQueue = device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {

@@ -2,6 +2,7 @@ mod camera;
 mod image;
 mod material;
 mod mesh;
+mod mesh_data;
 mod shader;
 mod vertex_buffer;
 
@@ -12,6 +13,7 @@ pub use camera::Camera;
 pub use image::Image;
 pub use material::Material;
 pub use mesh::Mesh;
+pub use mesh_data::{MeshBuffer, MeshData};
 pub use shader::Shader;
 pub use vertex_buffer::VertexBuffer;
 

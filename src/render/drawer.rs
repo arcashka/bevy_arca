@@ -14,7 +14,7 @@ use windows::{
     },
 };
 
-use crate::core::Camera;
+use crate::core::{Camera, Mesh, MeshData};
 
 use super::{gpu::Gpu, pipelines::PipelineStorage, render_target::WindowRenderTarget};
 
@@ -45,7 +45,9 @@ impl Drawer {
 pub fn draw<const PIPELINE_ID: usize>(
     mut pipelines: ResMut<PipelineStorage>,
     gpu: Res<Gpu>,
-    cameras: Query<(&Camera, &GlobalTransform, &Transform)>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mesh_handles: Query<(&Handle<Mesh>, &GlobalTransform)>,
+    mesh_storage: Res<Assets<Mesh>>,
     mut render_targets: Query<&mut WindowRenderTarget>,
     mut drawer: ResMut<Drawer>,
 ) {
@@ -67,7 +69,7 @@ pub fn draw<const PIPELINE_ID: usize>(
             .unwrap();
     }
 
-    let (camera_settings, camera_global_transform, camera_transform) = cameras
+    let (camera_settings, camera_global_transform) = cameras
         .get_single()
         .expect("only 1 camera is supported right now");
     for mut render_target in render_targets.iter_mut() {
@@ -101,7 +103,13 @@ pub fn draw<const PIPELINE_ID: usize>(
             );
         }
 
-        pipeline.write_camera_data(&camera_global_transform, &camera_settings);
+        let mut mesh_storage_buffer = MeshData::new();
+        for (mesh_handle, mesh_global_transform) in mesh_handles.iter() {
+            let mesh = mesh_storage.get(mesh_handle).unwrap();
+            mesh_storage_buffer.add_mesh(mesh, mesh_global_transform);
+        }
+        pipeline.set_mesh_data(&mesh_storage_buffer);
+        pipeline.write_camera_data(camera_global_transform, camera_settings);
         pipeline.populate_command_list(&mut drawer.command_list);
 
         unsafe {
