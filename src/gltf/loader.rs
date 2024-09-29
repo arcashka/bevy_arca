@@ -429,7 +429,7 @@ fn load_node(
     let mut gltf_error = None;
     let transform = node_transform(gltf_node);
     let world_transform = *parent_transform * transform;
-    let mut node = world_builder.spawn(transform);
+    let mut node = world_builder.spawn((transform, GlobalTransform::default()));
 
     let name = node_name(gltf_node);
     node.insert(name.clone());
