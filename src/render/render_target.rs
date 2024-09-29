@@ -67,7 +67,6 @@ pub fn create_render_targets(
 pub fn switch_frame(
     mut windows: Query<(&Window, &mut WindowRenderTarget, Entity)>,
     gpu: Res<Gpu>,
-    mut rtv_heap: ResMut<RtvHeap>,
     mut resize_events: EventWriter<ResizeEvent>,
 ) {
     for (window, mut render_target, entity) in &mut windows {
@@ -77,7 +76,6 @@ pub fn switch_frame(
         if new_swapchain_desc != old_swapchain_desc {
             render_target.handle_resize(
                 &gpu.device,
-                &mut rtv_heap,
                 new_swapchain_desc,
                 window.width(),
                 window.height(),
@@ -128,7 +126,8 @@ impl WindowRenderTarget {
             rect,
         };
 
-        window_render_target.create_rtvs(&gpu.device, rtv_heap);
+        window_render_target.create_descriptors(rtv_heap);
+        window_render_target.create_rtvs(&gpu.device);
         window_render_target
     }
 
@@ -169,17 +168,20 @@ impl WindowRenderTarget {
         }
     }
 
-    fn create_rtvs(&mut self, device: &ID3D12Device9, rtv_heap: &mut DescriptorHeap) {
+    fn create_descriptors(&mut self, rtv_heap: &mut DescriptorHeap) {
+        for _ in 0..FRAME_COUNT {
+            self.rtv_handles.push(rtv_heap.cpu_handle());
+        }
+    }
+
+    fn create_rtvs(&mut self, device: &ID3D12Device9) {
         (0..FRAME_COUNT).for_each(|i| {
             let rtv = unsafe { self.swapchain.GetBuffer::<ID3D12Resource>(i as u32) }.unwrap();
-            let handle = rtv_heap.cpu_handle();
-            unsafe { device.CreateRenderTargetView(&rtv, None, handle) };
+            unsafe { device.CreateRenderTargetView(&rtv, None, self.rtv_handles[i]) };
 
-            if self.rtv_handles.len() == i {
-                self.rtv_handles.push(handle);
+            if self.rtvs.len() == i {
                 self.rtvs.push(rtv);
             } else {
-                self.rtv_handles[i] = handle;
                 self.rtvs[i] = rtv;
             }
         });
@@ -188,7 +190,6 @@ impl WindowRenderTarget {
     fn handle_resize(
         &mut self,
         device: &ID3D12Device9,
-        rtv_heap: &mut DescriptorHeap,
         desc: DXGI_SWAP_CHAIN_DESC1,
         width: f32,
         height: f32,
@@ -209,12 +210,11 @@ impl WindowRenderTarget {
         self.viewport = create_viewport(width, height);
         self.rect = create_rect(width as i32, height as i32);
 
-        self.create_rtvs(device, rtv_heap);
+        self.create_rtvs(device);
     }
 
     fn destroy_resources(&mut self) {
         self.rtvs.clear();
-        self.rtv_handles.clear();
     }
 }
 
