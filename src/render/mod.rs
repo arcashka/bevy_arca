@@ -1,6 +1,7 @@
 mod descriptor_heap;
 mod drawer;
 mod gpu;
+mod mesh_data;
 mod pipelines;
 mod render_target;
 
@@ -15,6 +16,7 @@ use render_target::{create_render_targets, switch_frame, RtvHeap, FRAME_COUNT};
 pub use descriptor_heap::DescriptorHeap;
 pub use drawer::Drawer;
 pub use gpu::Gpu;
+pub use mesh_data::{MeshBuffer, MeshData};
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
 };

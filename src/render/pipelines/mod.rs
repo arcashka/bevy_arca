@@ -3,7 +3,8 @@ mod naive_pathtracer;
 use bevy::{prelude::*, utils::HashMap};
 use windows::Win32::Graphics::Direct3D12::{ID3D12GraphicsCommandList, ID3D12PipelineState};
 
-use crate::core::{Camera, MeshData};
+use super::MeshData;
+use crate::core::Camera;
 
 pub use naive_pathtracer::{create_pathtracer_pipeline, PathTracerShaderHandle};
 
