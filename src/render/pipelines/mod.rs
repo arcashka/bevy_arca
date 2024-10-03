@@ -34,6 +34,23 @@ struct CameraData {
     inverse_view_matrix: [[f32; 4]; 4],
     aspect_ratio: f32,
     fov: f32,
+    __padding: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct MeshInfo {
+    vertex_count: u32,
+    __padding: [u32; 3],
+}
+
+impl MeshInfo {
+    fn new(vertex_count: u32) -> Self {
+        Self {
+            vertex_count,
+            __padding: [0; 3],
+        }
+    }
 }
 
 impl CameraData {
@@ -50,6 +67,7 @@ impl CameraData {
             inverse_view_matrix: inverse_view_matrix.to_cols_array_2d(),
             aspect_ratio: camera.aspect_ratio,
             fov: camera.fov,
+            __padding: [0; 2],
         }
     }
 }

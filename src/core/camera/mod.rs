@@ -23,10 +23,10 @@ impl Plugin for CameraPlugin {
 }
 
 fn update_aspect_ratio(
-    mut cameras: Query<(&mut Camera, Entity)>,
+    mut cameras: Query<&mut Camera>,
     mut resize_event: EventReader<ResizeEvent>,
 ) {
-    let (mut camera, entity) = cameras
+    let mut camera = cameras
         .get_single_mut()
         .expect("only 1 camera is supported right now");
 

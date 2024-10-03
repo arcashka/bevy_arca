@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr};
+use std::ffi::c_void;
 
 use bevy::prelude::*;
 use windows::{
@@ -11,23 +11,24 @@ use windows::{
         Direct3D12::*,
         Dxgi::Common::{
             DXGI_FORMAT_R32G32B32_FLOAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
-            DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
+            DXGI_SAMPLE_DESC,
         },
     },
 };
 
 use crate::{
     core::{Camera, Shader, VertexBuffer},
-    render::{DescriptorHeap, Gpu, MeshBuffer, MeshData},
+    render::{constant_buffer::ConstantBuffer, DescriptorHeap, Gpu, MeshBuffer, MeshData},
 };
 
-use super::{CameraData, Pipeline, PipelineStorage, PATH_TRACER_PIPELINE_ID};
+use super::{CameraData, MeshInfo, Pipeline, PipelineStorage, PATH_TRACER_PIPELINE_ID};
 
 pub struct PathTracerPipeline {
     root_signature: ID3D12RootSignature,
     vertex_buffer: VertexBuffer,
     state: ID3D12PipelineState,
-    constant_buffer: ID3D12Resource,
+    camera_constant_buffer: ConstantBuffer<CameraData>,
+    mesh_info_constant_buffer: ConstantBuffer<MeshInfo>,
     mesh_buffer: MeshBuffer,
     srv_heap: DescriptorHeap,
 }
@@ -42,9 +43,11 @@ impl Pipeline for PathTracerPipeline {
             // TODO: don't do it every frame
             self.mesh_buffer.upload(command_list);
 
-            let constant_buffer_address = self.constant_buffer.GetGPUVirtualAddress();
-            command_list.SetGraphicsRootConstantBufferView(0, constant_buffer_address);
-            command_list.SetGraphicsRootDescriptorTable(1, self.srv_heap.gpu_handle());
+            command_list
+                .SetGraphicsRootConstantBufferView(0, self.camera_constant_buffer.gpu_adress());
+            command_list
+                .SetGraphicsRootConstantBufferView(1, self.mesh_info_constant_buffer.gpu_adress());
+            command_list.SetGraphicsRootDescriptorTable(2, self.srv_heap.gpu_handle());
 
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             command_list.IASetVertexBuffers(0, Some(&[*self.vertex_buffer.view()]));
@@ -54,20 +57,7 @@ impl Pipeline for PathTracerPipeline {
 
     fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera) {
         let data = CameraData::new(transform, camera);
-
-        let mut data_begin: *mut std::ffi::c_void = ptr::null_mut();
-        unsafe {
-            self.constant_buffer
-                .Map(0, None, Some(&mut data_begin))
-                .expect("Failed to map constant buffer");
-
-            ptr::copy_nonoverlapping(
-                &data as *const _ as *const u8,
-                data_begin as *mut u8,
-                std::mem::size_of::<CameraData>(),
-            );
-            self.constant_buffer.Unmap(0, None);
-        }
+        self.camera_constant_buffer.write(&data);
     }
 
     fn state(&self) -> &ID3D12PipelineState {
@@ -76,6 +66,8 @@ impl Pipeline for PathTracerPipeline {
 
     fn set_mesh_data(&mut self, data: &MeshData) {
         self.mesh_buffer.set_new_data(data);
+        self.mesh_info_constant_buffer
+            .write(&MeshInfo::new(data.vertex_count() as u32))
     }
 }
 
@@ -109,20 +101,37 @@ pub fn create_root_signature(gpu: &Gpu) -> ID3D12RootSignature {
         },
     };
 
-    let root_descriptor_cbv = D3D12_ROOT_DESCRIPTOR {
+    let root_descriptor_camera_cbv = D3D12_ROOT_DESCRIPTOR {
         ShaderRegister: 0,
         RegisterSpace: 0,
     };
 
-    let root_parameter_cbv = D3D12_ROOT_PARAMETER {
+    let root_parameter_camera_cbv = D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_CBV,
         ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
         Anonymous: D3D12_ROOT_PARAMETER_0 {
-            Descriptor: root_descriptor_cbv,
+            Descriptor: root_descriptor_camera_cbv,
         },
     };
 
-    let root_parameters = [root_parameter_cbv, root_parameter_srv];
+    let root_descriptor_mesh_info_cbv = D3D12_ROOT_DESCRIPTOR {
+        ShaderRegister: 1,
+        RegisterSpace: 0,
+    };
+
+    let root_parameter_mesh_info_cbv = D3D12_ROOT_PARAMETER {
+        ParameterType: D3D12_ROOT_PARAMETER_TYPE_CBV,
+        ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+        Anonymous: D3D12_ROOT_PARAMETER_0 {
+            Descriptor: root_descriptor_mesh_info_cbv,
+        },
+    };
+
+    let root_parameters = [
+        root_parameter_camera_cbv,
+        root_parameter_mesh_info_cbv,
+        root_parameter_srv,
+    ];
     let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
         Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
         NumParameters: root_parameters.len() as u32,
@@ -319,49 +328,6 @@ fn create_pipeline_state(
     }
 }
 
-fn create_constant_buffer(gpu: &Gpu) -> ID3D12Resource {
-    let constant_buffer_size = std::mem::size_of::<CameraData>() as u64;
-    let constant_buffer_desc = D3D12_RESOURCE_DESC {
-        Alignment: 0,
-        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-        Width: constant_buffer_size,
-        Height: 1,
-        DepthOrArraySize: 1,
-        MipLevels: 1,
-        Format: DXGI_FORMAT_UNKNOWN,
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            ..Default::default()
-        },
-        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        Flags: D3D12_RESOURCE_FLAG_NONE,
-    };
-
-    let mut constant_buffer: Option<ID3D12Resource> = None;
-
-    let heap_properties = D3D12_HEAP_PROPERTIES {
-        Type: D3D12_HEAP_TYPE_UPLOAD,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-        CreationNodeMask: 1,
-        VisibleNodeMask: 1,
-    };
-
-    unsafe {
-        gpu.device
-            .CreateCommittedResource(
-                &heap_properties,
-                D3D12_HEAP_FLAG_NONE,
-                &constant_buffer_desc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                None,
-                &mut constant_buffer,
-            )
-            .expect("Failed to create constant buffer");
-    }
-    constant_buffer.expect("Failed to create constant buffer")
-}
-
 pub fn create_pathtracer_pipeline(
     gpu: Res<Gpu>,
     shader_handle: Res<PathTracerShaderHandle>,
@@ -381,7 +347,8 @@ pub fn create_pathtracer_pipeline(
     let root_signature = create_root_signature(&gpu);
     let state = create_pipeline_state(&gpu, &compiled_shaders, &root_signature);
     let vertex_buffer = VertexBuffer::fullscreen_quad(&gpu);
-    let constant_buffer = create_constant_buffer(&gpu);
+    let camera_constant_buffer = ConstantBuffer::<CameraData>::create(&gpu);
+    let mesh_info_constant_buffer = ConstantBuffer::<MeshInfo>::create(&gpu);
     let mesh_buffer = MeshBuffer::new(&gpu);
     let mut srv_heap = DescriptorHeap::new(
         &gpu,
@@ -390,15 +357,14 @@ pub fn create_pathtracer_pipeline(
         D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
     );
 
-    // TODO: shouldn't be like this. like wtf
-    let _ = mesh_buffer.srv_vertex(&gpu, &mut srv_heap);
-    let _ = mesh_buffer.srv_index(&gpu, &mut srv_heap);
+    mesh_buffer.write_to_descriptor_heap(&gpu, &mut srv_heap);
 
     let pipeline = PathTracerPipeline {
         state,
         root_signature,
         vertex_buffer,
-        constant_buffer,
+        camera_constant_buffer,
+        mesh_info_constant_buffer,
         mesh_buffer,
         srv_heap,
     };

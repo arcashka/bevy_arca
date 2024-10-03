@@ -3,10 +3,10 @@ use bevy::prelude::*;
 use windows::Win32::Graphics::{
     Direct3D12::{
         ID3D12GraphicsCommandList, ID3D12Resource, D3D12_BUFFER_SRV, D3D12_BUFFER_SRV_FLAG_NONE,
-        D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES,
-        D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_MEMORY_POOL_UNKNOWN,
-        D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+        D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+        D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_HEAP_TYPE_UPLOAD, D3D12_MEMORY_POOL_UNKNOWN, D3D12_RESOURCE_BARRIER,
+        D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
         D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER, D3D12_RESOURCE_FLAG_NONE,
         D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST,
@@ -239,11 +239,7 @@ impl MeshBuffer {
         }
     }
 
-    pub fn srv_vertex(
-        &self,
-        gpu: &Gpu,
-        descriptor_heap: &mut DescriptorHeap,
-    ) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+    pub fn write_to_descriptor_heap(&self, gpu: &Gpu, descriptor_heap: &mut DescriptorHeap) {
         let vertex_srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_UNKNOWN,
             ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
@@ -264,15 +260,8 @@ impl MeshBuffer {
                 Some(&vertex_srv_desc),
                 handle,
             );
-            handle
         }
-    }
 
-    pub fn srv_index(
-        &self,
-        gpu: &Gpu,
-        descriptor_heap: &mut DescriptorHeap,
-    ) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         let index_srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_UNKNOWN,
             ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
@@ -293,7 +282,6 @@ impl MeshBuffer {
                 Some(&index_srv_desc),
                 handle,
             );
-            handle
         }
     }
 }
@@ -323,5 +311,9 @@ impl MeshData {
             );
             self.indices.extend(mesh.indices.as_ref().unwrap().iter());
         }
+    }
+
+    pub fn vertex_count(&self) -> usize {
+        self.indices.len()
     }
 }

@@ -10,6 +10,11 @@ cbuffer CameraBuffer : register(b0) {
     float fov;
 };
 
+cbuffer MeshData : register(b1)
+{
+    uint vertexCount;
+};
+
 StructuredBuffer<float3> vertexBuffer : register(t0);
 
 StructuredBuffer<uint> indexBuffer : register(t1);
@@ -97,7 +102,7 @@ float3 GetColorForRay(float3 origin, float3 direction, inout uint rngState)
     bool hit = false;
 
     // Loop over all triangles
-    for (uint i = 0; i < 40; i += 3)
+    for (uint i = 0; i < vertexCount; i += 3)
     {
         // Get vertex indices
         uint index0 = indexBuffer[i];
