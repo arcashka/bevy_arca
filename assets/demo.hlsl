@@ -5,63 +5,31 @@ struct PSInput
 };
 
 cbuffer CameraBuffer : register(b0) {
-    matrix invViewMatrix;
-    float aspectRatio;
+    matrix inv_view_matrix;
+    float aspect_ratio;
     float fov;
 };
 
 cbuffer MeshData : register(b1)
 {
-    uint vertexCount;
+    uint vertex_count;
 };
 
-StructuredBuffer<float3> vertexBuffer : register(t0);
+StructuredBuffer<float3> vertex_buffer : register(t0);
+StructuredBuffer<uint> index_buffer : register(t1);
 
-StructuredBuffer<uint> indexBuffer : register(t1);
-
-static const float c_minimumRayHitTime = 0.01f;
-
-static const float c_rayPosNormalNudge = 0.01f;
-
-static const float c_superFar = 10000.0f;
-
-static const int c_numBounces = 10;
-
-static const int c_numRendersPerFrame = 10;
-
-static const float c_pi = 3.14159265359f;
-static const float c_twopi = 2.0f * c_pi;
+static const float MINIMUM_RAY_HIT_TIME = 0.01f;
+static const float SUPER_FAR = 10000.0f;
+static const int BOUNCE_NUMBER = 10;
+static const int RENDERS_PER_FRAME = 10;
+static const float PI = 3.14159265359f;
+static const float TWO_PI = 2.0f * PI;
 
 struct Ray
 {
     float3 origin;
     float3 direction;
 };
-
-uint wang_hash(inout uint seed)
-{
-    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
-    seed *= uint(9);
-    seed = seed ^ (seed >> 4);
-    seed *= uint(0x27d4eb2d);
-    seed = seed ^ (seed >> 15);
-    return seed;
-}
-
-float RandomFloat01(inout uint state)
-{
-    return float(wang_hash(state)) / 4294967296.0f;
-}
-
-float3 RandomUnitVector(inout uint state)
-{
-    float z = RandomFloat01(state) * 2.0f - 1.0f;
-    float a = RandomFloat01(state) * c_twopi;
-    float r = sqrt(1.0f - z * z);
-    float x = r * cos(a);
-    float y = r * sin(a);
-    return float3(x, y, z);
-}
 
 bool RayIntersectsTriangle(Ray ray, float3 v0, float3 v1, float3 v2, out float t)
 {
@@ -85,7 +53,7 @@ bool RayIntersectsTriangle(Ray ray, float3 v0, float3 v1, float3 v2, out float t
         return false;
 
     t = f * dot(edge2, q);
-    if (t > c_minimumRayHitTime)
+    if (t > MINIMUM_RAY_HIT_TIME)
         return true;
     else
         return false;
@@ -97,22 +65,22 @@ float3 GetColorForRay(float3 origin, float3 direction, inout uint rngState)
     ray.origin = origin;
     ray.direction = direction;
 
-    float minDistance = c_superFar;
+    float minDistance = SUPER_FAR;
     float3 hitColor = float3(0.0f, 0.0f, 0.0f);
     bool hit = false;
 
     // Loop over all triangles
-    for (uint i = 0; i < vertexCount; i += 3)
+    for (uint i = 0; i < vertex_count; i += 3)
     {
         // Get vertex indices
-        uint index0 = indexBuffer[i];
-        uint index1 = indexBuffer[i + 1];
-        uint index2 = indexBuffer[i + 2];
+        uint index0 = index_buffer[i];
+        uint index1 = index_buffer[i + 1];
+        uint index2 = index_buffer[i + 2];
 
         // Get vertex positions
-        float3 v0 = vertexBuffer[index0];
-        float3 v1 = vertexBuffer[index1];
-        float3 v2 = vertexBuffer[index2];
+        float3 v0 = vertex_buffer[index0];
+        float3 v1 = vertex_buffer[index1];
+        float3 v2 = vertex_buffer[index2];
 
         // Perform ray-triangle intersection
         float t;
@@ -152,17 +120,17 @@ float4 PSMain(PSInput input) : SV_TARGET
     uint rngStateBase = (uint(floor(input.uv.x * 32767.0f)) * 1974u + uint(floor(input.uv.y * 32767.0f)) * 9277u) | 1;
 
     float2 ndc = float2(2.0f * input.uv.x - 1.0f, 2.0f * input.uv.y - 1.0f);
-    ndc.x *= aspectRatio;
+    ndc.x *= aspect_ratio;
     float scale = tan(fov * 0.5f);
 
     float3 rayDirCameraSpace = normalize(float3(ndc.x * scale, ndc.y * scale, -1.0f));
-    float3 ray_dir = normalize(mul((float3x3)invViewMatrix, rayDirCameraSpace));
-    float3 camera_world_space = invViewMatrix._m03_m13_m23;
+    float3 ray_dir = normalize(mul((float3x3)inv_view_matrix, rayDirCameraSpace));
+    float3 camera_world_space = inv_view_matrix._m03_m13_m23;
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
-    for (uint index = 0; index < c_numRendersPerFrame; ++index) {
+    for (uint index = 0; index < RENDERS_PER_FRAME; ++index) {
         uint rngState = rngStateBase + index * 15731u;
-        color += GetColorForRay(camera_world_space, ray_dir, rngState) / float(c_numRendersPerFrame);
+        color += GetColorForRay(camera_world_space, ray_dir, rngState) / float(RENDERS_PER_FRAME);
     }
 
     return float4(color, 1.0f);
