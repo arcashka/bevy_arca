@@ -9,6 +9,7 @@ mod render_target;
 use bevy::{app::MainScheduleOrder, ecs::schedule::ScheduleLabel, prelude::*};
 
 use drawer::draw;
+use mesh_data::MeshPlugin;
 use pipelines::{
     create_pathtracer_pipeline, PathTracerShaderHandle, PipelineStorage, PATH_TRACER_PIPELINE_ID,
 };
@@ -17,7 +18,7 @@ use render_target::{create_render_targets, switch_frame, RtvHeap, FRAME_COUNT};
 pub use descriptor_heap::DescriptorHeap;
 pub use drawer::Drawer;
 pub use gpu::Gpu;
-pub use mesh_data::{MeshBuffer, MeshData};
+pub use mesh_data::MeshData;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
 };
@@ -59,6 +60,8 @@ impl Plugin for RenderPlugin {
                 )
                     .chain(),
             );
+
+        app.add_plugins(MeshPlugin);
     }
 }
 

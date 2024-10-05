@@ -18,7 +18,9 @@ use windows::{
 
 use crate::{
     core::{Camera, Shader, VertexBuffer},
-    render::{constant_buffer::ConstantBuffer, DescriptorHeap, Gpu, MeshBuffer, MeshData},
+    render::{
+        constant_buffer::ConstantBuffer, mesh_data::MeshBuffer, DescriptorHeap, Gpu, MeshData,
+    },
 };
 
 use super::{CameraData, MeshInfo, Pipeline, PipelineStorage, PATH_TRACER_PIPELINE_ID};
@@ -39,9 +41,6 @@ impl Pipeline for PathTracerPipeline {
             command_list.SetPipelineState(&self.state);
             command_list.SetDescriptorHeaps(&[Some(self.srv_heap.heap())]);
             command_list.SetGraphicsRootSignature(&self.root_signature);
-
-            // TODO: don't do it every frame
-            self.mesh_buffer.upload(command_list);
 
             command_list
                 .SetGraphicsRootConstantBufferView(0, self.camera_constant_buffer.gpu_adress());
@@ -64,8 +63,9 @@ impl Pipeline for PathTracerPipeline {
         &self.state
     }
 
-    fn set_mesh_data(&mut self, data: &MeshData) {
+    fn set_mesh_data(&mut self, data: &MeshData, command_list: &mut ID3D12GraphicsCommandList) {
         self.mesh_buffer.set_new_data(data);
+        self.mesh_buffer.upload(command_list);
         self.mesh_info_constant_buffer
             .write(&MeshInfo::new(data.vertex_count() as u32))
     }

@@ -15,7 +15,7 @@ use windows::{
 };
 
 use super::{gpu::Gpu, pipelines::PipelineStorage, render_target::WindowRenderTarget, MeshData};
-use crate::core::{Camera, Mesh};
+use crate::core::Camera;
 
 #[derive(Resource)]
 pub struct Drawer {
@@ -45,8 +45,7 @@ pub fn draw<const PIPELINE_ID: usize>(
     mut pipelines: ResMut<PipelineStorage>,
     gpu: Res<Gpu>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    mesh_handles: Query<(&Handle<Mesh>, &GlobalTransform)>,
-    mesh_storage: Res<Assets<Mesh>>,
+    mut mesh_data: ResMut<MeshData>,
     mut render_targets: Query<&mut WindowRenderTarget>,
     mut drawer: ResMut<Drawer>,
 ) {
@@ -102,12 +101,10 @@ pub fn draw<const PIPELINE_ID: usize>(
             );
         }
 
-        let mut mesh_storage_buffer = MeshData::new();
-        for (mesh_handle, mesh_global_transform) in mesh_handles.iter() {
-            let mesh = mesh_storage.get(mesh_handle).unwrap();
-            mesh_storage_buffer.add_mesh(mesh, mesh_global_transform);
+        if mesh_data.updated() {
+            pipeline.set_mesh_data(&mesh_data, &mut drawer.command_list);
+            mesh_data.set_used();
         }
-        pipeline.set_mesh_data(&mesh_storage_buffer);
         pipeline.write_camera_data(camera_global_transform, camera_settings);
         pipeline.populate_command_list(&mut drawer.command_list);
 

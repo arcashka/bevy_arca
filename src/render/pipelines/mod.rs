@@ -16,7 +16,7 @@ pub trait Pipeline: Send + Sync {
     fn populate_command_list(&self, command_list: &mut ID3D12GraphicsCommandList);
     fn state(&self) -> &ID3D12PipelineState;
     fn write_camera_data(&mut self, transform: &GlobalTransform, camera: &Camera);
-    fn set_mesh_data(&mut self, data: &MeshData);
+    fn set_mesh_data(&mut self, data: &MeshData, command_list: &mut ID3D12GraphicsCommandList);
 }
 
 #[derive(Resource, Deref, DerefMut)]
