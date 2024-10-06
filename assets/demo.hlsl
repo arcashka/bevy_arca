@@ -1,4 +1,5 @@
 // Based on https://github.com/SebLague/Ray-Tracing/blob/Episode01/Assets/Scripts/Shaders/RayTracing.shader
+// see https://www.youtube.com/watch?v=Qz0KTGYJtUk
 
 struct PSInput
 {
