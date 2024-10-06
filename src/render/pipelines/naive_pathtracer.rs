@@ -216,16 +216,28 @@ fn compile_shaders(shader_source: &Shader) -> PathTracerShaders {
             Some(&mut pixel_error_msg),
         );
 
-        match (result_vs, result_ps) {
-            (Ok(_), Ok(_)) => {}
-            (Err(e), _) => panic!(
-                "Vertex shader compilation failed: {:?} error message: {:?}",
-                e, vertex_error_msg
-            ),
-            (_, Err(e)) => panic!(
-                "Pixel shader compilation failed: {:?} error message: {:?}",
-                e, pixel_error_msg
-            ),
+        if let Some(blob) = vertex_error_msg {
+            let message = std::str::from_utf8(std::slice::from_raw_parts(
+                blob.GetBufferPointer() as *const u8,
+                blob.GetBufferSize(),
+            ))
+            .unwrap_or("Failed to read error message");
+            warn!("Vertex shader compilation message: {}", message);
+        }
+        if let Err(e) = result_vs {
+            panic!("Vertex shader compilation failed: {}", e);
+        }
+
+        if let Some(blob) = pixel_error_msg {
+            let message = std::str::from_utf8(std::slice::from_raw_parts(
+                blob.GetBufferPointer() as *const u8,
+                blob.GetBufferSize(),
+            ))
+            .unwrap_or("Failed to read error message");
+            warn!("Pixel shader compilation message: {}", message);
+        }
+        if let Err(e) = result_ps {
+            panic!("Pixel shader compilation failed: {}", e);
         }
     }
 
